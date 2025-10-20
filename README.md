@@ -147,6 +147,15 @@ export FNOX_PROFILE=production
 cd my-app  # Loads production secrets
 ```
 
+## Why is this a standalone CLI and not part of mise?
+
+mise has support for [encrypted secrets](https://mise.jdx.dev/environments/secrets/) but mise's design makes it a poor fit for remote secrets. mise reloads
+its environment too frequently—whenever a directory is changed, `mise x` is run, a shim is called, etc. Any other use-case like this mise leverages caching
+but secrets are an area where caching is a bad idea for obvious reasons. It might be possible to change mise's design to retain its environment in part to
+better support something like this but that's a huge challenge.
+
+Basically it's just too hard to get remote secrets to work effectively with mise so I made this a standalone tool.
+
 ---
 
 ## Providers: Complete Getting Started Guides
