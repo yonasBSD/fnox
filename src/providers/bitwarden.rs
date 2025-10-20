@@ -24,17 +24,35 @@ impl BitwardenProvider {
         let mut cmd = Command::new("bw");
 
         // Check if session token is available
-        if let Some(token) = &*BW_SESSION_TOKEN {
+        let token = if let Some(token) = &*BW_SESSION_TOKEN {
             tracing::debug!(
-                "Setting BW_SESSION environment variable from LazyLock (token length: {})",
+                "Found BW_SESSION token in environment (length: {})",
                 token.len()
             );
-            cmd.env("BW_SESSION", token);
+            token
         } else {
-            tracing::warn!("BW_SESSION token not found in environment");
-        }
+            // BW_SESSION not found - this will cause bw to fail
+            tracing::error!(
+                "BW_SESSION token not found in environment. Set BW_SESSION=$(bw unlock --raw) or FNOX_BW_SESSION_TOKEN"
+            );
+            return Err(FnoxError::Provider(
+                "Bitwarden session not found. Please set BW_SESSION environment variable:\n  \
+                 export BW_SESSION=$(bw unlock --raw)\n\
+                 Or set FNOX_BW_SESSION_TOKEN in your configuration."
+                    .to_string(),
+            ));
+        };
 
         cmd.args(args);
+
+        // Pass session token as --session flag
+        // This is more reliable than environment variable in some contexts
+        cmd.arg("--session");
+        cmd.arg(token);
+
+        // Close stdin to prevent bw from prompting for passwords interactively
+        // This is especially important in CI environments where there's no TTY
+        cmd.stdin(std::process::Stdio::null());
 
         // The BW_SESSION environment variable should be set externally
         // Users should run: export BW_SESSION=$(bw unlock --raw)
