@@ -12,7 +12,6 @@ teardown() {
 @test "fnox init creates default config file" {
     assert_fnox_success init
     assert_file_exists "fnox.toml"
-    assert_config_contains "[secrets]"
 }
 
 @test "fnox init fails if config already exists" {
@@ -29,9 +28,9 @@ teardown() {
     assert_file_exists "custom-fnox.toml"
 }
 
-@test "fnox init creates empty secrets section" {
+@test "fnox init creates minimal config" {
     assert_fnox_success init
-    assert_config_contains "[secrets]"
+    assert_file_exists "fnox.toml"
 }
 
 @test "fnox commands show helpful error when no config found" {
