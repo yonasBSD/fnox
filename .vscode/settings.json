@@ -1,0 +1,19 @@
+{
+  "shellcheck.ignorePatterns": {
+    "test/bats/**": true,
+    "test/test_helper/**": true
+  },
+  "markdownlint.lintWorkspaceGlobs": [
+    "**/*.{md,mkd,mdwn,mdown,markdown,markdn,mdtxt,mdtext,workbook}",
+    "!**/*.code-search",
+    "!**/bower_components",
+    "!**/node_modules",
+    "!**/.git",
+    "!**/vendor",
+    "!CRUSH.md"
+  ],
+  "files.exclude": {
+    "test/bats/**": true,
+    "test/test_helper/bats-*/**": true
+  }
+}

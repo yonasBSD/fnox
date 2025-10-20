@@ -1,0 +1,42 @@
+amends "package://github.com/jdx/hk/releases/download/v1.19.0/hk@1.19.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.19.0/hk@1.19.0#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+    ["actionlint"] = Builtins.actionlint
+    ["prettier"] = (Builtins.prettier) {
+        exclude = List("CLAUDE.md") // TODO: fix symbolic links with prettier built-in: ([error] Explicitly specified pattern "CLAUDE.md" is a symbolic link.)
+    }
+    ["cargo-fmt"] = Builtins.cargo_fmt
+    ["cargo-check"] = Builtins.cargo_check
+    ["cargo-clippy"] = (Builtins.cargo_clippy) {
+        profiles = List("slow")
+    }
+    ["shfmt"] = Builtins.shfmt
+    ["shellcheck"] = Builtins.shellcheck
+
+    // define a custom linter
+    ["pkl"] {
+        glob = "*.pkl"
+        check = "pkl eval {{files}} >/dev/null"
+    }
+}
+
+fail_fast = false
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
+    //["pre-push"] {
+    // steps = linters
+    //}
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+    ["check"] {
+        steps = linters
+    }
+}

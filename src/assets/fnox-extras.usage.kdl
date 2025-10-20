@@ -1,0 +1,13 @@
+// Dynamic completions for fnox commands
+
+// Complete secret keys - this will automatically match args named "key"
+complete "key" run="fnox list --complete 2>/dev/null || true"
+
+// Complete provider names - this will automatically match args named "name" in provider commands
+complete "name" run="fnox provider list --complete 2>/dev/null || true"
+
+// Complete profile names - this will automatically match args named "profile"
+complete "profile" run="fnox profiles --complete 2>/dev/null || true"
+
+// Complete config files
+complete "config_file" type="file"

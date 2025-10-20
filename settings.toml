@@ -1,0 +1,83 @@
+# Fnox Settings Registry
+#
+# This file defines all configurable settings for fnox, including:
+# - Type information
+# - Default values
+# - Configuration sources (CLI flags, environment variables, config files)
+# - Documentation
+#
+# The build script (build/generate_settings.rs) reads this file and generates:
+# - src/generated/settings.rs - Settings struct with type-safe fields
+# - src/generated/settings_merge.rs - Merge logic and types
+# - src/generated/settings_meta.rs - Metadata for introspection
+
+[age_key_file]
+type = "option<path>"
+default = "None"
+sources.cli = ["--age-key-file"]
+sources.env = ["FNOX_AGE_KEY_FILE"]
+docs = """
+Path to a file containing the age encryption key.
+
+This can be set via:
+- CLI flag: --age-key-file <path>
+- Environment variable: FNOX_AGE_KEY_FILE
+
+Priority (highest to lowest): CLI > Environment > Default
+"""
+examples = [
+  "fnox get MY_SECRET --age-key-file ~/.age/key.txt",
+  "FNOX_AGE_KEY_FILE=~/.age/key.txt fnox get MY_SECRET",
+]
+since = "0.1.0"
+
+[profile]
+type = "string"
+default = "\"default\""
+sources.cli = ["--profile", "-p"]
+sources.env = ["FNOX_PROFILE"]
+docs = """
+Configuration profile to use for secrets retrieval.
+
+Profiles allow you to maintain multiple configurations (e.g., dev, staging, prod)
+in a single fnox.toml file.
+
+Priority (highest to lowest): CLI > Environment > Default
+"""
+examples = [
+  "fnox get MY_SECRET --profile production",
+  "FNOX_PROFILE=staging fnox get MY_SECRET",
+]
+since = "0.1.0"
+
+[shell_integration_output]
+type = "string"
+default = "\"normal\""
+sources.env = ["FNOX_SHELL_OUTPUT"]
+docs = """
+Control output level for shell integration.
+
+Available modes:
+- "none" - No output from shell integration
+- "normal" - Show summary when secrets are loaded/unloaded (default)
+- "debug" - Show detailed information including early-exit reasons
+
+When set to "normal", fnox will output a summary to stderr showing which
+secrets were loaded or unloaded, with truncated values (first 8 characters).
+
+When set to "debug", fnox will additionally show:
+- When hook-env runs
+- Whether it exits early (optimization)
+- Why it exits early (no changes detected)
+- Config file paths being loaded
+
+This is useful for understanding what the shell integration is doing and
+troubleshooting issues.
+
+Priority: Environment > Default
+"""
+examples = [
+  "FNOX_SHELL_OUTPUT=none fnox activate bash",
+  "FNOX_SHELL_OUTPUT=debug fnox activate zsh",
+]
+since = "0.1.0"

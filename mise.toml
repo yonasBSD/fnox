@@ -1,0 +1,54 @@
+[env]
+_.path = ["target/debug", "test/bats/bin"]
+
+[tools]
+age = "latest"
+"cargo:cargo-msrv" = "latest"
+cargo-binstall = "latest"
+"cargo:cargo-edit" = "latest"
+git-cliff = "latest"
+hk = "latest"
+pkl = "latest"
+prettier = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+actionlint = "latest"
+1password = "latest"
+bitwarden = "latest"
+vault = "latest"
+
+[tasks.test]
+description = "Run both cargo and bats tests"
+depends = ["test:*"]
+
+[tasks."test:cargo"]
+description = "Run cargo tests only"
+run = "cargo test"
+
+[tasks."test:bats"]
+description = "Run bats tests only"
+depends = ["build"]
+run = "fnox exec -- bats --jobs 4 --no-parallelize-within-files {{arg(name='test', var=true, default='test')}}"
+
+[tasks.cargo-test]
+description = "Run cargo tests only"
+run = "cargo test"
+
+[tasks.lint]
+run = "hk check --all --slow"
+
+[tasks.lint-fix]
+run = "hk fix --all --slow"
+
+[tasks.build]
+description = "Build the project"
+run = "cargo build"
+
+[tasks.ci]
+description = "Run full CI check (build, test, lint)"
+depends = ["build", "test", "lint"]
+
+[tasks."render:usage"]
+description = "Generate usage specification file"
+depends = ["build"]
+run = "fnox usage > fnox.usage.kdl"

@@ -1,0 +1,19 @@
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: fnox-vaultwarden-test
+    environment:
+      - DOMAIN=http://localhost:8080
+      - SIGNUPS_ALLOWED=true
+      - INVITATIONS_ALLOWED=true
+      - WEBSOCKET_ENABLED=true
+      # Disable admin token for local testing
+      - DISABLE_ADMIN_TOKEN=true
+    ports:
+      - "8080:80"
+    volumes:
+      - vaultwarden-data:/data
+    restart: unless-stopped
+
+volumes:
+  vaultwarden-data:
