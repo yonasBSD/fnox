@@ -63,16 +63,8 @@ impl CiRedactCommand {
         // Get the profile secrets
         let profile_secrets = config.get_secrets(&profile)?;
 
-        if profile_secrets.is_empty() && profile != "default" {
-            let available_profiles = config.list_profiles();
-            return Err(FnoxError::ProfileNotFound {
-                profile: profile.clone(),
-                available_profiles,
-            });
-        }
-
         // Resolve and redact each secret
-        for (key, secret_config) in profile_secrets {
+        for (key, secret_config) in &profile_secrets {
             match resolve_secret(
                 &config,
                 &profile,
