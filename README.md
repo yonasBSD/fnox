@@ -176,7 +176,7 @@ Each provider below is a complete standalone guide. Choose the ones that fit you
 # Option 1: Generate a new age key
 age-keygen -o ~/.config/fnox/age.txt
 
-# Option 2: Use your existing SSH key (recommended!)
+# Option 2: Use your existing SSH key
 # age can encrypt to SSH keys directly, no conversion needed
 ```
 
@@ -251,6 +251,20 @@ recipients = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQs..."]
 # Decrypt with your SSH private key
 export FNOX_AGE_KEY_FILE=~/.ssh/id_ed25519
 ```
+
+**Supported SSH Key Types:**
+
+- **`ssh-ed25519`** - Ed25519 keys (recommended, most secure)
+- **`ssh-rsa`** - RSA keys (2048-bit minimum, 4096-bit recommended)
+
+**Key Formats:**
+
+- **Public keys:** Use the full SSH public key format (`ssh-ed25519 AAAA...` or `ssh-rsa AAAA...`)
+- **Private keys:** Standard OpenSSH private key format (`-----BEGIN OPENSSH PRIVATE KEY-----`)
+
+> [!WARNING]
+>
+> Password-protected SSH keys are not supported. If your SSH key has a passphrase, you must create a copy without passphrase.
 
 Works with `ssh-ed25519` and `ssh-rsa` keys. For teams, add multiple recipients:
 
