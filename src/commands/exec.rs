@@ -1,9 +1,6 @@
 use crate::error::{FnoxError, Result};
-use crate::secret_resolver::resolve_secret;
-use crate::{
-    commands::Cli,
-    config::{Config, IfMissing},
-};
+use crate::secret_resolver::{handle_provider_error, resolve_if_missing_behavior, resolve_secret};
+use crate::{commands::Cli, config::Config};
 use clap::{Args, ValueHint};
 use std::process::Command;
 
@@ -50,20 +47,11 @@ impl ExecCommand {
                     // Secret not found but if_missing allows it (already handled by resolve_secret)
                 }
                 Err(e) => {
-                    // Provider error (auth, network, missing secret, etc.)
-                    // Respect if_missing to decide whether to fail or continue
-                    match secret_config.if_missing {
-                        Some(IfMissing::Error) => {
-                            tracing::error!("Error resolving secret '{}': {}", key, e);
-                            return Err(e);
-                        }
-                        Some(IfMissing::Warn) | None => {
-                            // Default (None) is Warn
-                            tracing::warn!("Error resolving secret '{}': {}", key, e);
-                        }
-                        Some(IfMissing::Ignore) => {
-                            // Silently skip
-                        }
+                    // Provider error - respect if_missing to decide whether to fail or continue
+                    let if_missing = resolve_if_missing_behavior(secret_config, &config);
+
+                    if let Some(error) = handle_provider_error(key, e, if_missing, true) {
+                        return Err(error);
                     }
                 }
             }

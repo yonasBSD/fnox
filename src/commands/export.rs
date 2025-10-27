@@ -1,7 +1,7 @@
 use crate::commands::Cli;
-use crate::config::{Config, IfMissing};
+use crate::config::Config;
 use crate::error::Result;
-use crate::secret_resolver::resolve_secret;
+use crate::secret_resolver::{handle_provider_error, resolve_if_missing_behavior, resolve_secret};
 use clap::{Args, ValueEnum};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -76,18 +76,10 @@ impl ExportCommand {
                 }
                 Err(e) => {
                     // Provider error - respect if_missing to decide whether to fail or continue
-                    match secret_config.if_missing {
-                        Some(IfMissing::Error) => {
-                            tracing::error!("Error resolving secret '{}': {}", key, e);
-                            return Err(e);
-                        }
-                        Some(IfMissing::Warn) | None => {
-                            // Default (None) is Warn
-                            tracing::warn!("Error resolving secret '{}': {}", key, e);
-                        }
-                        Some(IfMissing::Ignore) => {
-                            // Silently skip
-                        }
+                    let if_missing = resolve_if_missing_behavior(secret_config, &config);
+
+                    if let Some(error) = handle_provider_error(key, e, if_missing, true) {
+                        return Err(error);
                     }
                 }
             }
