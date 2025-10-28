@@ -58,7 +58,7 @@ azure_identity = { version = "0.21" }
 azure_security_keyvault = { version = "0.21" }
 google-cloud-kms = { version = "0.6" }
 google-cloud-secretmanager-v1 = { version = "1.1" }
-gcp_auth = { version = "0.12" }
+gcp_auth = { git = "https://github.com/djc/gcp_auth", rev = "26fa225" }
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 # Required for rustls crypto provider (used by GCP SDKs)
 rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std"] }
