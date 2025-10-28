@@ -2,14 +2,6 @@
 
 HashiCorp Vault provides advanced secret management with dynamic secrets, leasing, and fine-grained access control.
 
-## When to Use
-
-- ✅ Already running Vault
-- ✅ Need dynamic secrets
-- ✅ Multi-cloud support required
-- ✅ Complex access policies
-- ✅ Secret leasing/rotation
-
 ## Prerequisites
 
 - Vault server running (self-hosted or HCP Vault)

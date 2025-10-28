@@ -2,17 +2,6 @@
 
 GCP Secret Manager provides centralized secret management for Google Cloud workloads.
 
-## When to Use
-
-- ✅ Running on GCP infrastructure
-- ✅ Need centralized secret management
-- ✅ GCP IAM integration
-- ✅ Audit logs required
-
-::: info Storage Mode
-This is **remote storage** - secrets live in GCP Secret Manager, not in your `fnox.toml`.
-:::
-
 ## Quick Start
 
 ```bash

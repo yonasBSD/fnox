@@ -2,17 +2,6 @@
 
 Google Cloud KMS encrypts secrets using GCP-managed keys. The encrypted ciphertext is stored in your `fnox.toml` file.
 
-## When to Use
-
-- ✅ Secrets in git (encrypted)
-- ✅ GCP-managed encryption keys
-- ✅ GCP IAM integration
-- ✅ GCP infrastructure
-
-::: info Storage Mode
-This is **local encryption** - the encrypted ciphertext lives in `fnox.toml`. Cloud KMS is only called to encrypt/decrypt.
-:::
-
 ## Quick Start
 
 ```bash

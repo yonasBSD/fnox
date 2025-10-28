@@ -2,15 +2,6 @@
 
 Age is a modern encryption tool that's simple, secure, and works beautifully with SSH keys.
 
-## When to Use
-
-- ✅ You want secrets in git, encrypted
-- ✅ Minimal setup required
-- ✅ Perfect for development secrets
-- ✅ Open source projects
-- ✅ Teams that want secrets in version control
-- ✅ Works offline
-
 ## Quick Start
 
 ```bash

@@ -2,14 +2,6 @@
 
 Integrate with 1Password to retrieve secrets from your vaults using the 1Password CLI.
 
-## When to Use
-
-- ✅ Your team already uses 1Password
-- ✅ You want a polished password manager experience
-- ✅ Need audit logs and access control
-- ✅ Great UI and mobile apps
-- ✅ Team-friendly
-
 ## Quick Start
 
 ```bash

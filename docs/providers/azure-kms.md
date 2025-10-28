@@ -2,17 +2,6 @@
 
 Azure Key Vault Keys encrypts secrets using Azure-managed keys. The encrypted ciphertext is stored in your `fnox.toml` file.
 
-## When to Use
-
-- ✅ Secrets in git (encrypted)
-- ✅ Azure-managed encryption keys
-- ✅ Azure RBAC integration
-- ✅ Azure infrastructure
-
-::: info Storage Mode
-This is **local encryption** - the encrypted ciphertext lives in `fnox.toml`. Azure Key Vault is only called to encrypt/decrypt.
-:::
-
 ## Quick Start
 
 ```bash

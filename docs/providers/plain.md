@@ -2,17 +2,6 @@
 
 Store secrets as plain text (for default values only!).
 
-## When to Use
-
-- ✅ Non-sensitive default values
-- ✅ Development fallbacks
-- ✅ Public configuration
-- ✅ Default settings
-
-::: danger Never for Sensitive Data
-**NEVER** use plain text for passwords, API keys, or any sensitive information. Use [age](/providers/age) or another encryption provider instead.
-:::
-
 ## Usage
 
 Plain text is the default when no provider is specified:

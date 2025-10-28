@@ -2,14 +2,6 @@
 
 Store secrets in your operating system's native secure storage.
 
-## When to Use
-
-- ✅ Personal projects
-- ✅ Local development
-- ✅ Storing bootstrap tokens
-- ✅ Machine-specific secrets
-- ✅ No cloud dependencies desired
-
 ## Supported Platforms
 
 - **macOS:** Keychain Access (built-in)

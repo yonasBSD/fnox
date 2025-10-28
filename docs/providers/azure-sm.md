@@ -2,17 +2,6 @@
 
 Azure Key Vault Secrets provides centralized secret management for Azure workloads.
 
-## When to Use
-
-- ✅ Running on Azure infrastructure
-- ✅ Need centralized secret management
-- ✅ Azure RBAC integration
-- ✅ Audit logs required
-
-::: info Storage Mode
-This is **remote storage** - secrets live in Azure Key Vault, not in your `fnox.toml`.
-:::
-
 ## Quick Start
 
 ```bash

@@ -2,14 +2,6 @@
 
 Integrate with Bitwarden (or self-hosted Vaultwarden) to retrieve secrets from your vault.
 
-## When to Use
-
-- ✅ You want an open-source password manager
-- ✅ Already using Bitwarden or Vaultwarden
-- ✅ Self-hosting option desired
-- ✅ Good audit logs
-- ✅ Free for personal use
-
 ## Quick Start
 
 ```bash

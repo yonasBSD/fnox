@@ -2,19 +2,6 @@
 
 AWS Secrets Manager provides centralized secret management with IAM access control, audit logs, and automatic rotation.
 
-## When to Use
-
-- ✅ Running on AWS infrastructure
-- ✅ Need centralized secret management
-- ✅ Want IAM access control
-- ✅ Require audit logs (CloudTrail)
-- ✅ Automatic rotation needed
-- ✅ Production workloads
-
-::: info Storage Mode
-This is **remote storage** - secrets live in AWS, not in your `fnox.toml`. Your config file contains only _references_ to secret names.
-:::
-
 ## Quick Start
 
 ```bash

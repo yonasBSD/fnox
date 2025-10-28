@@ -2,18 +2,6 @@
 
 AWS Key Management Service (KMS) encrypts secrets using AWS-managed keys. The encrypted ciphertext is stored in your `fnox.toml` file.
 
-## When to Use
-
-- ✅ Secrets in git (encrypted)
-- ✅ AWS-managed encryption keys
-- ✅ IAM access control
-- ✅ CloudTrail audit logs
-- ✅ AWS infrastructure
-
-::: info Storage Mode
-This is **local encryption** - the encrypted ciphertext lives in `fnox.toml`. AWS KMS is only called to encrypt/decrypt.
-:::
-
 ## Comparison: KMS vs Secrets Manager
 
 | Feature        | AWS KMS                                | AWS Secrets Manager  |
