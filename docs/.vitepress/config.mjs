@@ -37,96 +37,88 @@ export default defineConfig({
       { text: "Reference", link: "/reference/environment" },
     ],
 
-    sidebar: {
-      "/guide/": [
-        {
-          text: "Introduction",
-          items: [
-            { text: "What is fnox?", link: "/guide/what-is-fnox" },
-            { text: "Installation", link: "/guide/installation" },
-            { text: "Quick Start", link: "/guide/quick-start" },
-            { text: "How It Works", link: "/guide/how-it-works" },
-          ],
-        },
-        {
-          text: "Features",
-          items: [
-            { text: "Shell Integration", link: "/guide/shell-integration" },
-            { text: "Profiles", link: "/guide/profiles" },
-            { text: "Hierarchical Config", link: "/guide/hierarchical-config" },
-            { text: "Local Overrides", link: "/guide/local-overrides" },
-            {
-              text: "Handling Missing Secrets",
-              link: "/guide/missing-secrets",
-            },
-            { text: "Import/Export", link: "/guide/import-export" },
-          ],
-        },
-        {
-          text: "Examples",
-          items: [
-            { text: "Real-World Setup", link: "/guide/real-world-example" },
-          ],
-        },
-      ],
-      "/providers/": [
-        {
-          text: "Providers",
-          items: [{ text: "Overview", link: "/providers/overview" }],
-        },
-        {
-          text: "Encryption (in git)",
-          items: [
-            { text: "Age Encryption", link: "/providers/age" },
-            { text: "AWS KMS", link: "/providers/aws-kms" },
-            { text: "Azure Key Vault Keys", link: "/providers/azure-kms" },
-            { text: "Google Cloud KMS", link: "/providers/gcp-kms" },
-          ],
-        },
-        {
-          text: "Cloud Secret Storage",
-          items: [
-            { text: "AWS Secrets Manager", link: "/providers/aws-sm" },
-            { text: "Azure Key Vault Secrets", link: "/providers/azure-sm" },
-            { text: "GCP Secret Manager", link: "/providers/gcp-sm" },
-            { text: "HashiCorp Vault", link: "/providers/vault" },
-          ],
-        },
-        {
-          text: "Password Managers",
-          items: [
-            { text: "1Password", link: "/providers/1password" },
-            { text: "Bitwarden", link: "/providers/bitwarden" },
-          ],
-        },
-        {
-          text: "Local Storage",
-          items: [
-            { text: "OS Keychain", link: "/providers/keychain" },
-            { text: "Plain Text", link: "/providers/plain" },
-          ],
-        },
-      ],
-      "/reference/": [
-        {
-          text: "Reference",
-          items: [
-            { text: "Environment Variables", link: "/reference/environment" },
-            { text: "Configuration", link: "/reference/configuration" },
-          ],
-        },
-      ],
-      "/cli/": [
-        {
-          text: "CLI Reference",
-          link: "/cli/",
-          items: commands.map((cmd) => ({
-            text: cmd.join(" "),
-            link: `/cli/${cmd.join("/")}`,
-          })),
-        },
-      ],
-    },
+    sidebar: [
+      {
+        text: "Introduction",
+        items: [
+          { text: "What is fnox?", link: "/guide/what-is-fnox" },
+          { text: "Installation", link: "/guide/installation" },
+          { text: "Quick Start", link: "/guide/quick-start" },
+          { text: "How It Works", link: "/guide/how-it-works" },
+        ],
+      },
+      {
+        text: "Features",
+        items: [
+          { text: "Shell Integration", link: "/guide/shell-integration" },
+          { text: "Profiles", link: "/guide/profiles" },
+          { text: "Hierarchical Config", link: "/guide/hierarchical-config" },
+          { text: "Local Overrides", link: "/guide/local-overrides" },
+          {
+            text: "Handling Missing Secrets",
+            link: "/guide/missing-secrets",
+          },
+          { text: "Import/Export", link: "/guide/import-export" },
+        ],
+      },
+      {
+        text: "Examples",
+        items: [
+          { text: "Real-World Setup", link: "/guide/real-world-example" },
+        ],
+      },
+      {
+        text: "Providers",
+        items: [{ text: "Overview", link: "/providers/overview" }],
+      },
+      {
+        text: "Encryption (in git)",
+        items: [
+          { text: "Age Encryption", link: "/providers/age" },
+          { text: "AWS KMS", link: "/providers/aws-kms" },
+          { text: "Azure Key Vault Keys", link: "/providers/azure-kms" },
+          { text: "Google Cloud KMS", link: "/providers/gcp-kms" },
+        ],
+      },
+      {
+        text: "Cloud Secret Storage",
+        items: [
+          { text: "AWS Secrets Manager", link: "/providers/aws-sm" },
+          { text: "Azure Key Vault Secrets", link: "/providers/azure-sm" },
+          { text: "GCP Secret Manager", link: "/providers/gcp-sm" },
+          { text: "HashiCorp Vault", link: "/providers/vault" },
+        ],
+      },
+      {
+        text: "Password Managers",
+        items: [
+          { text: "1Password", link: "/providers/1password" },
+          { text: "Bitwarden", link: "/providers/bitwarden" },
+        ],
+      },
+      {
+        text: "Local Storage",
+        items: [
+          { text: "OS Keychain", link: "/providers/keychain" },
+          { text: "Plain Text", link: "/providers/plain" },
+        ],
+      },
+      {
+        text: "CLI Reference",
+        link: "/cli/",
+        items: commands.map((cmd) => ({
+          text: cmd.join(" "),
+          link: `/cli/${cmd.join("/")}`,
+        })),
+      },
+      {
+        text: "Reference",
+        items: [
+          { text: "Environment Variables", link: "/reference/environment" },
+          { text: "Configuration", link: "/reference/configuration" },
+        ],
+      },
+    ],
 
     socialLinks: [{ icon: "github", link: "https://github.com/jdx/fnox" }],
 
