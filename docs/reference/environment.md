@@ -312,6 +312,6 @@ When multiple configuration methods exist, fnox uses this priority (highest to l
 
 ## Next Steps
 
-- [Commands Reference](/reference/commands) - All available commands
+- [CLI Reference](/cli/) - All available commands
 - [Configuration Reference](/reference/configuration) - Configuration file format
 - [Quick Start](/guide/quick-start) - Get started with fnox

@@ -427,6 +427,6 @@ Merge order (lowest to highest priority):
 
 ## Next Steps
 
-- [Commands Reference](/reference/commands) - All available commands
+- [CLI Reference](/cli/) - All available commands
 - [Environment Variables](/reference/environment) - Environment variable reference
 - [Providers Overview](/providers/overview) - Available providers
