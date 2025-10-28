@@ -54,7 +54,18 @@ run = "cargo build"
 description = "Run full CI check (build, test, lint)"
 depends = ["build", "test", "lint"]
 
+[tasks.render]
+description = "Render documentation from usage"
+depends = ["render:*"]
+
 [tasks."render:usage"]
-description = "Generate usage specification file"
+description = "Generate CLI documentation from usage"
 depends = ["build"]
-run = "fnox usage > fnox.usage.kdl"
+run = [
+  "fnox usage > fnox.usage.kdl",
+  "rm -rf docs/cli && mkdir -p docs/cli",
+  "usage g markdown -mf fnox.usage.kdl --out-dir docs/cli --url-prefix /cli",
+  "usage g json -f fnox.usage.kdl > docs/cli/commands.json",
+  "prettier --write docs/cli",
+  "git add fnox.usage.kdl docs/cli",
+]

@@ -1,7 +1,7 @@
 min_usage_version "1.3"
 name fnox
 bin fnox
-version "0.1.0"
+version "1.1.0"
 about "A flexible secret management tool by @jdx"
 usage "Usage: fnox [OPTIONS] <COMMAND>"
 flag "-c --config" help="Path to the configuration file (default: fnox.toml, searches parent directories)" global=#true {
@@ -14,27 +14,34 @@ flag "-v --verbose" help="Enable verbose logging" global=#true
 flag --age-key-file help="Path to age key file for decryption" global=#true {
     arg <AGE_KEY_FILE>
 }
-flag --no-color help="Disable colored output" global=#true
-cmd check help="Check if all required secrets are defined and configured" {
-    flag "-p --profile" help="Profile to check (default: current profile or environment variable)" {
-        arg <PROFILE>
-    }
+flag --if-missing help="What to do if a secret is missing (error, warn, ignore)" global=#true {
+    arg <IF_MISSING>
 }
-cmd completion hide=#true help="Generate shell completions" {
+flag --no-color help="Disable colored output" global=#true
+cmd activate help="Output shell activation code to enable automatic secret loading" {
+    flag --no-hook-env help="Don't automatically invoke hook-env (for testing)"
+    arg "[SHELL]" help="Shell to generate activation code for (bash, zsh, fish)" required=#false
+}
+cmd check help="Check if all required secrets are defined and configured" {
+    alias c
+}
+cmd ci-redact hide=#true help="Redact secrets in CI/CD output (GitHub Actions mask)"
+cmd completion help="Generate shell completions" {
+    alias complete completions hide=#true
     arg <SHELL> help="Shell type to generate completions for"
 }
-cmd delete help="Delete a secret" {
-    alias rm
-    flag "-f --force" help="Skip confirmation prompt"
-    arg <KEY> help="Secret key to delete"
-}
+cmd deactivate help="Disable fnox shell integration in the current shell session"
 cmd doctor help="Show diagnostic information about the current fnox state" {
-    flag "-p --profile" help="Profile to diagnose (default: current profile or environment variable)" {
-        arg <PROFILE>
-    }
+    alias dr
 }
 cmd edit help="Edit the configuration file"
+cmd exec help="Execute a command with secrets as environment variables" {
+    alias x
+    alias run hide=#true
+    arg "[COMMAND]…" help="Command to run" required=#false double_dash=automatic var=#true
+}
 cmd export help="Export secrets in various formats" {
+    alias ex
     flag "-f --format" help="Export format" {
         arg <FORMAT> {
             choices env json yaml toml
@@ -43,15 +50,20 @@ cmd export help="Export secrets in various formats" {
     flag "-o --output" help="Output file (default: stdout)" {
         arg <OUTPUT>
     }
-    flag --include-optional help="Include secrets marked as optional"
 }
 cmd get help="Get a secret value" {
     arg <KEY> help="Secret key to retrieve"
 }
+cmd hook-env hide=#true help="Internal command used by shell hooks to load secrets" {
+    flag "-s --shell" help="Shell type (bash, zsh, fish)" {
+        arg <SHELL>
+    }
+}
 cmd import help="Import secrets from various sources" {
+    alias im
     flag "-f --force" help="Skip confirmation prompts"
-    flag "-s --source" help="Source file or path to import from (default: stdin)" {
-        arg <SOURCE>
+    flag "-i --input" help="Source file or path to import from (default: stdin)" {
+        arg <INPUT>
     }
     flag --filter help="Only import matching secrets (regex pattern)" {
         arg <FILTER>
@@ -63,38 +75,46 @@ cmd import help="Import secrets from various sources" {
         choices env json yaml toml
     }
 }
-cmd init help="Initialize a new fnox configuration file"
+cmd init help="Initialize a new fnox configuration file" {
+    alias i
+    flag --force help="Overwrite existing configuration file"
+    flag --skip-wizard help="Skip the interactive wizard and create a minimal config"
+}
 cmd list help="List all secrets" {
-    alias ls
+    alias ls secrets
     flag "-f --full" help="Show full provider keys without truncation"
+    flag "-s --sources" help="Show source file paths where secrets are defined"
     flag "-V --values" help="Show secret values (if available)"
     flag --complete help="Output secret keys for shell completion (one per line)" hide=#true
 }
 cmd profiles help="List available profiles" {
+    alias profile hide=#true
     flag --complete help="Output profile names for shell completion (one per line)" hide=#true
 }
 cmd provider help="Manage providers (defaults to list)" {
     cmd add help="Add a new provider" {
-        arg <NAME> help="Provider name"
+        alias a set
+        arg <PROVIDER> help="Provider name"
         arg <PROVIDER_TYPE> help="Provider type" {
-            choices "1password" aws vault gcp aws-kms azure-kv gcp-kms age
+            choices "1password" aws vault gcp aws-kms azure-kms azure-sm gcp-kms age
         }
     }
     cmd list help="List available providers" {
+        alias ls
         flag --complete help="Output provider names for shell completion (one per line)" hide=#true
     }
     cmd remove help="Remove a provider" {
-        arg <NAME> help="Provider name"
+        alias rm delete
+        arg <PROVIDER> help="Provider name"
     }
     cmd test help="Test a provider connection" {
-        arg <NAME> help="Provider name"
+        alias t
+        arg <PROVIDER> help="Provider name"
     }
 }
 cmd remove help="Remove a secret" {
+    alias rm delete
     arg <KEY> help="Secret key to remove"
-}
-cmd run help="Run a command with secrets as environment variables" {
-    arg "[COMMAND]…" help="Command to run" required=#false double_dash=automatic var=#true
 }
 cmd scan help="Scan repository for potential secrets" {
     flag "-d --dir" help="Directory to scan (default: current directory)" {
@@ -106,6 +126,7 @@ cmd scan help="Scan repository for potential secrets" {
     flag "-q --quiet" help="Show only files with potential secrets"
 }
 cmd set help="Set a secret value" {
+    alias s
     flag "-d --description" help="Description of the secret" {
         arg <DESCRIPTION>
     }
@@ -119,14 +140,17 @@ cmd set help="Set a secret value" {
         arg <DEFAULT>
     }
     flag --if-missing help="What to do if the secret is missing (error, warn, ignore)" {
-        arg <IF_MISSING>
+        arg <IF_MISSING> {
+            choices error warn ignore
+        }
     }
-    flag --prompt help="Prompt for secret value interactively"
     arg <KEY> help="Secret key (environment variable name)"
     arg "[VALUE]" help="Secret value (reads from stdin if not provided)" required=#false
 }
 cmd usage hide=#true help="Generate usage specification"
-cmd version help="Show version information"
+cmd version help="Show version information" {
+    alias v
+}
 // Dynamic completions for fnox commands
 
 // Complete secret keys - this will automatically match args named "key"

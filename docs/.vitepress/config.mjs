@@ -1,4 +1,26 @@
 import { defineConfig } from "vitepress";
+import spec from "../cli/commands.json" with { type: "json" };
+
+/**
+ * @typedef {Object} Command
+ * @property {Record<string, Command & { hide?: boolean; full_cmd: string[] }>} subcommands
+ */
+
+/**
+ * @param {Command} cmd
+ * @returns {string[][]}
+ */
+function getCommands(cmd) {
+  const commands = [];
+  for (const [name, sub] of Object.entries(cmd.subcommands)) {
+    if (sub.hide) continue;
+    commands.push(sub.full_cmd);
+    commands.push(...getCommands(sub));
+  }
+  return commands;
+}
+
+const commands = getCommands(spec.cmd);
 
 export default defineConfig({
   title: "fnox",
@@ -11,7 +33,8 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/what-is-fnox" },
       { text: "Providers", link: "/providers/overview" },
-      { text: "Reference", link: "/reference/commands" },
+      { text: "CLI Reference", link: "/cli/" },
+      { text: "Reference", link: "/reference/environment" },
     ],
 
     sidebar: {
@@ -88,10 +111,19 @@ export default defineConfig({
         {
           text: "Reference",
           items: [
-            { text: "Commands", link: "/reference/commands" },
             { text: "Environment Variables", link: "/reference/environment" },
             { text: "Configuration", link: "/reference/configuration" },
           ],
+        },
+      ],
+      "/cli/": [
+        {
+          text: "CLI Reference",
+          link: "/cli/",
+          items: commands.map((cmd) => ({
+            text: cmd.join(" "),
+            link: `/cli/${cmd.join("/")}`,
+          })),
         },
       ],
     },
