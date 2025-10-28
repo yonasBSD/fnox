@@ -3,6 +3,8 @@ use crate::env;
 use crate::error::{FnoxError, Result};
 use crate::providers::get_provider;
 use crate::settings::Settings;
+use indexmap::IndexMap;
+use std::collections::HashMap; // Used only for internal grouping by provider
 
 /// Resolves the if_missing behavior using the complete priority chain:
 /// 1. CLI flag (--if-missing) via Settings
@@ -184,4 +186,195 @@ fn handle_missing_secret(
         }
         IfMissing::Ignore => Ok(None),
     }
+}
+
+/// Resolves multiple secrets efficiently using batch operations when possible.
+///
+/// This groups secrets by provider and uses `get_secrets_batch` to minimize
+/// external API calls. Providers are processed in parallel for maximum efficiency.
+///
+/// Returns an error immediately if any secret with `if_missing = "error"` fails to resolve.
+pub async fn resolve_secrets_batch(
+    config: &Config,
+    profile: &str,
+    secrets: &IndexMap<String, SecretConfig>,
+    age_key_file: Option<&std::path::Path>,
+) -> Result<IndexMap<String, Option<String>>> {
+    use futures::stream::{self, StreamExt};
+
+    // Group secrets by provider
+    let mut by_provider: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    let mut no_provider = Vec::new();
+
+    for (key, secret_config) in secrets {
+        // Check if we can resolve from provider
+        if let Some(ref provider_value) = secret_config.value {
+            // Determine which provider to use
+            let provider_name = if let Some(ref provider_name) = secret_config.provider {
+                provider_name.clone()
+            } else if let Ok(Some(default_provider)) = config.get_default_provider(profile) {
+                default_provider
+            } else {
+                // No provider, fall back to individual resolution
+                no_provider.push(key.clone());
+                continue;
+            };
+
+            by_provider
+                .entry(provider_name)
+                .or_default()
+                .push((key.clone(), provider_value.clone()));
+        } else {
+            // No value for provider, use individual resolution
+            no_provider.push(key.clone());
+        }
+    }
+
+    // Resolve secrets grouped by provider in parallel
+    let provider_results: Vec<_> = stream::iter(by_provider)
+        .map(|(provider_name, provider_secrets)| async move {
+            resolve_provider_batch(
+                config,
+                profile,
+                secrets,
+                &provider_name,
+                provider_secrets,
+                age_key_file,
+            )
+            .await
+        })
+        .buffer_unordered(10)
+        .collect()
+        .await;
+
+    // Combine results from all providers into a temporary HashMap, failing fast on errors
+    let mut temp_results = HashMap::new();
+    for provider_result in provider_results {
+        temp_results.extend(provider_result?);
+    }
+
+    // Resolve secrets that couldn't be batched using individual resolution in parallel
+    let no_provider_results: Vec<_> = stream::iter(no_provider)
+        .map(|key| async move {
+            let secret_config = &secrets[&key];
+            match resolve_secret(config, profile, &key, secret_config, age_key_file).await {
+                Ok(value) => Ok((key, value)),
+                Err(e) => {
+                    let if_missing = resolve_if_missing_behavior(secret_config, config);
+                    if let Some(error) = handle_provider_error(&key, e, if_missing, true) {
+                        // Error should fail fast - return the error
+                        Err(error)
+                    } else {
+                        // Warn or ignore - continue with None
+                        Ok((key, None))
+                    }
+                }
+            }
+        })
+        .buffer_unordered(10)
+        .collect()
+        .await;
+
+    // Add no-provider results to temporary HashMap, failing fast on errors
+    for result in no_provider_results {
+        let (key, value) = result?;
+        temp_results.insert(key, value);
+    }
+
+    // Build final results in the original order from the input secrets IndexMap
+    let mut results = IndexMap::new();
+    for (key, _secret_config) in secrets {
+        if let Some(value) = temp_results.remove(key) {
+            results.insert(key.clone(), value);
+        }
+    }
+
+    Ok(results)
+}
+
+/// Resolve all secrets for a single provider using batch operations
+async fn resolve_provider_batch(
+    config: &Config,
+    profile: &str,
+    secrets: &IndexMap<String, SecretConfig>,
+    provider_name: &str,
+    provider_secrets: Vec<(String, String)>,
+    age_key_file: Option<&std::path::Path>,
+) -> Result<HashMap<String, Option<String>>> {
+    let mut results = HashMap::new();
+
+    tracing::debug!(
+        "Resolving {} secrets from provider '{}' using batch",
+        provider_secrets.len(),
+        provider_name
+    );
+
+    // Get the provider config
+    let providers = config.get_providers(profile);
+    let provider_config = match providers.get(provider_name) {
+        Some(config) => config,
+        None => {
+            // Provider not configured, handle errors for all secrets
+            for (key, _) in &provider_secrets {
+                let secret_config = &secrets[key];
+                let if_missing = resolve_if_missing_behavior(secret_config, config);
+                let error = FnoxError::ProviderNotConfigured {
+                    provider: provider_name.to_string(),
+                    profile: profile.to_string(),
+                    config_path: config.provider_sources.get(provider_name).cloned(),
+                };
+                if let Some(error) = handle_provider_error(key, error, if_missing, true) {
+                    // Fail fast if if_missing is error
+                    return Err(error);
+                }
+                results.insert(key.clone(), None);
+            }
+            return Ok(results);
+        }
+    };
+
+    // Get the provider instance
+    let provider = match get_provider(provider_config) {
+        Ok(p) => p,
+        Err(e) => {
+            // Failed to create provider, handle errors for all secrets
+            let error_msg = format!("Failed to create provider: {}", e);
+            for (key, _) in &provider_secrets {
+                let secret_config = &secrets[key];
+                let if_missing = resolve_if_missing_behavior(secret_config, config);
+                let provider_error = FnoxError::Provider(error_msg.clone());
+                if let Some(error) = handle_provider_error(key, provider_error, if_missing, true) {
+                    // Fail fast if if_missing is error
+                    return Err(error);
+                }
+                results.insert(key.clone(), None);
+            }
+            return Ok(results);
+        }
+    };
+
+    // Call batch method
+    let batch_results = provider
+        .get_secrets_batch(&provider_secrets, age_key_file)
+        .await;
+
+    // Process batch results
+    for (key, result) in batch_results {
+        let secret_config = &secrets[&key];
+        match result {
+            Ok(value) => {
+                results.insert(key, Some(value));
+            }
+            Err(e) => {
+                let if_missing = resolve_if_missing_behavior(secret_config, config);
+                if let Some(error) = handle_provider_error(&key, e, if_missing, true) {
+                    // Fail fast if if_missing is error
+                    return Err(error);
+                }
+                results.insert(key, None);
+            }
+        }
+    }
+
+    Ok(results)
 }
