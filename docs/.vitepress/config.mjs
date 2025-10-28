@@ -26,6 +26,7 @@ export default defineConfig({
   title: "fnox",
   description: "Fort Knox for your secrets",
   base: "/",
+  appearance: "dark",
 
   themeConfig: {
     logo: "/logo.svg",

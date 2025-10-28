@@ -1,0 +1,146 @@
+/**
+ * Customize default theme styling by overriding CSS variables:
+ * https://github.com/vuejs/vitepress/blob/main/src/client/theme-default/styles/vars.css
+ */
+
+/**
+ * Colors - Fort Knox theme (dark blue/gold)
+ * -------------------------------------------------------------------------- */
+
+:root {
+  /* Brand colors - vault/security theme */
+  --vp-c-brand-1: #d4af37; /* Gold */
+  --vp-c-brand-2: #c5a028;
+  --vp-c-brand-3: #b8911a;
+  --vp-c-brand-soft: rgba(212, 175, 55, 0.14);
+
+  /* Background - dark vault */
+  --vp-c-bg: #0a0e1a;
+  --vp-c-bg-alt: #0f1420;
+  --vp-c-bg-elv: #161b2e;
+  --vp-c-bg-soft: #1a2035;
+
+  /* Text */
+  --vp-c-text-1: #e8e6e3;
+  --vp-c-text-2: #c9c6c1;
+  --vp-c-text-3: #8e8b86;
+
+  /* Borders */
+  --vp-c-border: #2d3548;
+  --vp-c-divider: #232938;
+  --vp-c-gutter: #1a2035;
+
+  /* Component colors */
+  --vp-c-default-1: #2d3548;
+  --vp-c-default-2: #232938;
+  --vp-c-default-3: #1a2035;
+  --vp-c-default-soft: rgba(45, 53, 72, 0.14);
+
+  /* Sidebar */
+  --vp-sidebar-bg-color: var(--vp-c-bg-alt);
+
+  /* Code blocks */
+  --vp-code-block-bg: #0d1117;
+  --vp-code-tab-divider: var(--vp-c-border);
+  --vp-code-copy-code-hover-bg: rgba(212, 175, 55, 0.1);
+}
+
+/**
+ * Component: Button
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: #1a1a1a;
+  --vp-button-brand-bg: var(--vp-c-brand-1);
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: #1a1a1a;
+  --vp-button-brand-hover-bg: var(--vp-c-brand-2);
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: #1a1a1a;
+  --vp-button-brand-active-bg: var(--vp-c-brand-3);
+}
+
+/**
+ * Component: Home
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(
+    135deg,
+    var(--vp-c-brand-1) 0%,
+    #8b7355 100%
+  );
+
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(212, 175, 55, 0.3) 50%,
+    rgba(45, 53, 72, 0.3) 50%
+  );
+  --vp-home-hero-image-filter: blur(44px);
+}
+
+/**
+ * Component: Custom Block
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --vp-custom-block-tip-border: transparent;
+  --vp-custom-block-tip-text: var(--vp-c-text-1);
+  --vp-custom-block-tip-bg: rgba(212, 175, 55, 0.1);
+  --vp-custom-block-tip-code-bg: rgba(212, 175, 55, 0.05);
+}
+
+/**
+ * Component: Algolia (Search)
+ * -------------------------------------------------------------------------- */
+
+.DocSearch {
+  --docsearch-primary-color: var(--vp-c-brand-1) !important;
+  --docsearch-highlight-color: var(--vp-c-brand-1) !important;
+  --docsearch-text-color: var(--vp-c-text-1) !important;
+  --docsearch-muted-color: var(--vp-c-text-2) !important;
+  --docsearch-container-background: rgba(10, 14, 26, 0.8) !important;
+  --docsearch-modal-background: var(--vp-c-bg-alt) !important;
+  --docsearch-searchbox-background: var(--vp-c-bg) !important;
+  --docsearch-searchbox-focus-background: var(--vp-c-bg) !important;
+  --docsearch-hit-color: var(--vp-c-text-2) !important;
+  --docsearch-hit-active-color: var(--vp-c-text-1) !important;
+  --docsearch-hit-background: var(--vp-c-bg) !important;
+  --docsearch-footer-background: var(--vp-c-bg) !important;
+}
+
+/**
+ * Custom styles
+ * -------------------------------------------------------------------------- */
+
+/* Add subtle texture to code blocks */
+.vp-code-group .tabs {
+  background: linear-gradient(to bottom, rgba(212, 175, 55, 0.05), transparent);
+}
+
+/* Enhance link styling */
+.vp-doc a {
+  text-decoration: underline;
+  text-decoration-color: rgba(212, 175, 55, 0.3);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.2s;
+}
+
+.vp-doc a:hover {
+  text-decoration-color: var(--vp-c-brand-1);
+}
+
+/* Sidebar active item */
+.VPSidebarItem.is-active > .item > .link {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+
+/* Enhanced navbar */
+.VPNavBar {
+  border-bottom: 1px solid rgba(212, 175, 55, 0.1);
+  background: rgba(10, 14, 26, 0.8);
+  backdrop-filter: blur(8px);
+}
