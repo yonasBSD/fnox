@@ -69,12 +69,20 @@ setup_linux_keychain() {
             return 1
         fi
 
+        # Start dbus session if not already running
+        if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+            eval "$(dbus-launch --sh-syntax)"
+            export DBUS_SESSION_BUS_PID
+            export DBUS_SESSION_BUS_ADDRESS
+        fi
+
         # Start a test gnome-keyring daemon
         export GNOME_KEYRING_CONTROL="$BATS_TEST_TMPDIR/keyring-$$"
         mkdir -p "$GNOME_KEYRING_CONTROL"
 
         # Start the daemon with an unlocked keyring
-        eval "$(gnome-keyring-daemon --start --components=secrets --control-dir="$GNOME_KEYRING_CONTROL" 2>&1)"
+        # Note: --control-dir is not a valid option; the daemon uses the GNOME_KEYRING_CONTROL env var
+        eval "$(gnome-keyring-daemon --start --components=secrets)"
         export USING_TEST_KEYRING=1
 
         # Give it a moment to start
@@ -112,6 +120,11 @@ teardown() {
         # Clean up the control directory
         if [ -n "$GNOME_KEYRING_CONTROL" ] && [ -d "$GNOME_KEYRING_CONTROL" ]; then
             rm -rf "$GNOME_KEYRING_CONTROL" 2>&1 || true
+        fi
+
+        # Kill dbus session if we started it
+        if [ -n "${DBUS_SESSION_BUS_PID:-}" ]; then
+            kill "$DBUS_SESSION_BUS_PID" 2>&1 || true
         fi
     fi
 
