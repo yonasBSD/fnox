@@ -61,32 +61,11 @@ setup_linux_keychain() {
         echo "# Warning: secret-tool not found (install libsecret-tools for manual testing)" >&3
     fi
 
-    # In CI environments, set up a test secret service backend
+    # In CI environments, assume gnome-keyring-daemon is already running
+    # (started by CI workflow before tests begin)
     if [ "${CI:-}" = "true" ] || [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${GITLAB_CI:-}" ] || [ -n "${CIRCLECI:-}" ]; then
-        # Check if gnome-keyring-daemon is available
-        if ! command -v gnome-keyring-daemon >/dev/null 2>&1; then
-            echo "# Error: gnome-keyring-daemon not found in CI (install gnome-keyring)" >&3
-            return 1
-        fi
-
-        # Start dbus session if not already running
-        if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-            eval "$(dbus-launch --sh-syntax)"
-            export DBUS_SESSION_BUS_PID
-            export DBUS_SESSION_BUS_ADDRESS
-        fi
-
-        # Start a test gnome-keyring daemon
-        export GNOME_KEYRING_CONTROL="$BATS_TEST_TMPDIR/keyring-$$"
-        mkdir -p "$GNOME_KEYRING_CONTROL"
-
-        # Start the daemon with an unlocked keyring
-        # Note: --control-dir is not a valid option; the daemon uses the GNOME_KEYRING_CONTROL env var
-        eval "$(gnome-keyring-daemon --start --components=secrets)"
         export USING_TEST_KEYRING=1
-
-        # Give it a moment to start
-        sleep 1
+        return 0
     fi
 
     # For non-CI Linux, verify that a secret service is available via D-Bus
@@ -110,23 +89,8 @@ teardown() {
         done
     fi
 
-    # Clean up test keyring if we created one in CI (Linux)
-    if [ -n "$USING_TEST_KEYRING" ]; then
-        # Kill the gnome-keyring-daemon
-        if [ -n "${GNOME_KEYRING_PID:-}" ]; then
-            kill "$GNOME_KEYRING_PID" 2>&1 || true
-        fi
-
-        # Clean up the control directory
-        if [ -n "$GNOME_KEYRING_CONTROL" ] && [ -d "$GNOME_KEYRING_CONTROL" ]; then
-            rm -rf "$GNOME_KEYRING_CONTROL" 2>&1 || true
-        fi
-
-        # Kill dbus session if we started it
-        if [ -n "${DBUS_SESSION_BUS_PID:-}" ]; then
-            kill "$DBUS_SESSION_BUS_PID" 2>&1 || true
-        fi
-    fi
+    # Note: Don't kill gnome-keyring-daemon or dbus in CI
+    # They are started by the CI workflow and shared across all tests
 
     _common_teardown
 }
@@ -172,7 +136,8 @@ track_secret() {
     # Verify the config contains only a reference (not the value)
     run cat "${FNOX_CONFIG_FILE}"
     assert_success
-    assert_output --partial '[secrets.MY_SECRET]'
+    # Check for inline table or TOML table format (both are valid)
+    assert_output --partial 'MY_SECRET'
     assert_output --partial 'provider = "keychain"'
     assert_output --partial 'value = "MY_SECRET"'
     refute_output --partial "my-secret-value"
@@ -246,8 +211,8 @@ EOF
 line2
 line3"
 
-    # Set a multiline secret
-    echo "$multiline_value" | run "$FNOX_BIN" set MULTILINE --provider keychain
+    # Set a multiline secret (using bash -c for stdin pipe)
+    run bash -c "echo '$multiline_value' | '$FNOX_BIN' set MULTILINE --provider keychain"
     assert_success
     track_secret "MULTILINE"
 
@@ -311,8 +276,8 @@ line3"
     assert_success
     track_secret "EXEC_TEST"
 
-    # Use it in exec
-    run "$FNOX_BIN" exec -- bash -c "echo \$EXEC_TEST"
+    # Use it in exec (redirect stderr to filter age warnings from global config)
+    run bash -c "'$FNOX_BIN' exec -- bash -c 'echo \$EXEC_TEST' 2>/dev/null"
     assert_success
     assert_output "exec-value"
 }
@@ -376,8 +341,8 @@ EOF
 @test "fnox set reads from stdin" {
     create_keychain_config "$KEYCHAIN_SERVICE"
 
-    # Set secret from stdin
-    echo "stdin-value" | run "$FNOX_BIN" set STDIN_SECRET --provider keychain
+    # Set secret from stdin (using bash -c for stdin pipe)
+    run bash -c "echo 'stdin-value' | '$FNOX_BIN' set STDIN_SECRET --provider keychain"
     assert_success
     track_secret "STDIN_SECRET"
 
@@ -430,6 +395,7 @@ EOF
 [secrets.MISSING_SECRET]
 provider = "keychain"
 value = "not-in-keychain"
+if_missing = "error"
 EOF
 
     # Check should detect the missing secret

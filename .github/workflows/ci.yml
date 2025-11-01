@@ -71,7 +71,10 @@ jobs:
         run: |
           # Install gnome-keyring for keychain tests
           sudo apt-get update
-          sudo apt-get install -y gnome-keyring libsecret-tools dbus-x11
+          sudo apt-get install -y gnome-keyring libsecret-tools
+          # Start gnome-keyring daemon for keychain tests
+          # The daemon will automatically set up D-Bus and create control sockets
+          gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           # Start Vaultwarden
           docker run -d --name vaultwarden \
             -p 8080:80 \
