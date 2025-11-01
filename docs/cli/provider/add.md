@@ -20,11 +20,12 @@ Provider type
 **Choices:**
 
 - `1password`
+- `age`
 - `aws`
-- `vault`
-- `gcp`
 - `aws-kms`
 - `azure-kms`
 - `azure-sm`
+- `gcp`
 - `gcp-kms`
-- `age`
+- `infisical`
+- `vault`
