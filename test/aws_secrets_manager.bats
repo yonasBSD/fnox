@@ -87,7 +87,7 @@ EOF
 create_test_secret() {
     local secret_name="$1"
     local secret_value="$2"
-
+    
     aws secretsmanager create-secret \
         --name "$secret_name" \
         --secret-string "$secret_value" \
@@ -103,7 +103,7 @@ create_test_secret() {
     create_sm_config
 
     # Create a test secret
-    local timestamp="$(date +%s)"
+    local timestamp="$(date +%s)-$$-${BATS_TEST_NUMBER:-0}"
     local secret_name="fnox-test/test-secret-${timestamp}"
     local secret_value="my-test-secret-value"
     create_test_secret "$secret_name" "$secret_value"
@@ -126,7 +126,7 @@ EOF
     create_sm_config "us-east-1" "fnox-test/"
 
     # Create a test secret with full path
-    local timestamp="$(date +%s)"
+    local timestamp="$(date +%s)-$$-${BATS_TEST_NUMBER:-0}"
     local secret_name="fnox-test/prefixed-${timestamp}"
     local secret_value="value-with-prefix"
     create_test_secret "$secret_name" "$secret_value"
@@ -149,7 +149,7 @@ EOF
     create_sm_config "us-east-1" ""
 
     # Create a test secret without prefix
-    local timestamp="$(date +%s)"
+    local timestamp="$(date +%s)-$$-${BATS_TEST_NUMBER:-0}"
     local secret_name="fnox-full-name-${timestamp}"
     local secret_value="value-no-prefix"
     create_test_secret "$secret_name" "$secret_value"
@@ -188,7 +188,7 @@ EOF
     create_sm_config
 
     # Create a JSON secret
-    local timestamp="$(date +%s)"
+    local timestamp="$(date +%s)-$$-${BATS_TEST_NUMBER:-0}"
     local secret_name="fnox-test/json-secret-${timestamp}"
     local secret_value='{"api_key":"test123","endpoint":"https://api.example.com"}'
     create_test_secret "$secret_name" "$secret_value"
@@ -210,7 +210,7 @@ EOF
     create_sm_config
 
     # Create a multiline secret
-    local timestamp="$(date +%s)"
+    local timestamp="$(date +%s)-$$-${BATS_TEST_NUMBER:-0}"
     local secret_name="fnox-test/multiline-${timestamp}"
     local secret_value="line1
 line2
@@ -257,7 +257,7 @@ EOF
     create_sm_config "us-east-1"
 
     # Create a secret in the specified region
-    local timestamp="$(date +%s)"
+    local timestamp="$(date +%s)-$$-${BATS_TEST_NUMBER:-0}"
     local secret_name="fnox-test/regional-${timestamp}"
     local secret_value="region-specific-value"
     create_test_secret "$secret_name" "$secret_value"
@@ -279,7 +279,7 @@ EOF
     create_sm_config
 
     # Create a secret with special characters
-    local timestamp="$(date +%s)"
+    local timestamp="$(date +%s)-$$-${BATS_TEST_NUMBER:-0}"
     local secret_name="fnox-test/special-${timestamp}"
     local secret_value='p@ssw0rd!#$%^&*()_+-={}[]|\:";'\''<>?,./~`'
     create_test_secret "$secret_name" "$secret_value"
