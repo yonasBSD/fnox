@@ -34,6 +34,87 @@ pub enum ProviderCapability {
     RemoteRead,
 }
 
+/// Category for grouping providers in the wizard
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WizardCategory {
+    Local,
+    PasswordManager,
+    CloudKms,
+    CloudSecretsManager,
+    OsKeychain,
+}
+
+impl WizardCategory {
+    /// Display name for the category
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Local => "Local (easy to start)",
+            Self::PasswordManager => "Password Manager",
+            Self::CloudKms => "Cloud KMS",
+            Self::CloudSecretsManager => "Cloud Secrets Manager",
+            Self::OsKeychain => "OS Keychain",
+        }
+    }
+
+    /// Description for the category
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::Local => "Plain text or local encryption - no external dependencies",
+            Self::PasswordManager => {
+                "1Password, Bitwarden, Infisical - use your existing password manager"
+            }
+            Self::CloudKms => "AWS KMS, Azure Key Vault, GCP KMS - encrypt with cloud keys",
+            Self::CloudSecretsManager => {
+                "AWS, Azure, GCP, HashiCorp Vault - store secrets remotely"
+            }
+            Self::OsKeychain => "Use your operating system's secure keychain",
+        }
+    }
+
+    /// All categories in display order
+    pub fn all() -> &'static [WizardCategory] {
+        &[
+            Self::Local,
+            Self::PasswordManager,
+            Self::CloudKms,
+            Self::CloudSecretsManager,
+            Self::OsKeychain,
+        ]
+    }
+}
+
+/// A field that the wizard needs to collect
+#[derive(Debug, Clone)]
+pub struct WizardField {
+    /// Internal field name (e.g., "region")
+    pub name: &'static str,
+    /// Prompt shown to user (e.g., "AWS Region:")
+    pub label: &'static str,
+    /// Placeholder value (e.g., "us-east-1")
+    pub placeholder: &'static str,
+    /// Whether field must have a value
+    pub required: bool,
+}
+
+/// Complete wizard metadata for a provider type
+#[derive(Debug, Clone)]
+pub struct WizardInfo {
+    /// Provider type identifier (e.g., "aws-sm")
+    pub provider_type: &'static str,
+    /// Display name (e.g., "AWS Secrets Manager")
+    pub display_name: &'static str,
+    /// Short description for selection menu
+    pub description: &'static str,
+    /// Category for grouping
+    pub category: WizardCategory,
+    /// Multi-line setup instructions
+    pub setup_instructions: &'static str,
+    /// Default provider name (e.g., "sm")
+    pub default_name: &'static str,
+    /// Fields to collect from user
+    pub fields: &'static [WizardField],
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, AsRefStr)]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
@@ -246,10 +327,141 @@ pub trait Provider: Send + Sync {
     }
 }
 
+/// All wizard info collected from provider modules
+pub static ALL_WIZARD_INFO: &[&WizardInfo] = &[
+    // Local providers
+    &plain::WIZARD_INFO,
+    &age::WIZARD_INFO,
+    &keepass::WIZARD_INFO,
+    &password_store::WIZARD_INFO,
+    // Password Manager providers
+    &onepassword::WIZARD_INFO,
+    &bitwarden::WIZARD_INFO,
+    &infisical::WIZARD_INFO,
+    // Cloud KMS providers
+    &aws_kms::WIZARD_INFO,
+    &azure_kms::WIZARD_INFO,
+    &gcp_kms::WIZARD_INFO,
+    // Cloud Secrets Manager providers
+    &aws_sm::WIZARD_INFO,
+    &aws_ps::WIZARD_INFO,
+    &azure_sm::WIZARD_INFO,
+    &gcp_sm::WIZARD_INFO,
+    &vault::WIZARD_INFO,
+    // OS Keychain
+    &keychain::WIZARD_INFO,
+];
+
 impl ProviderConfig {
     /// Get the provider type name (e.g., "age", "1password", "plain")
     pub fn provider_type(&self) -> &str {
         self.as_ref()
+    }
+
+    /// Get wizard info for providers in a specific category
+    pub fn wizard_info_by_category(category: WizardCategory) -> Vec<&'static WizardInfo> {
+        ALL_WIZARD_INFO
+            .iter()
+            .filter(|info| info.category == category)
+            .copied()
+            .collect()
+    }
+
+    /// Build a ProviderConfig from wizard field values
+    pub fn from_wizard_fields(
+        provider_type: &str,
+        fields: &HashMap<String, String>,
+    ) -> Result<Self> {
+        use crate::error::FnoxError;
+
+        // Helper to get a required field
+        let get_required = |name: &str| -> Result<String> {
+            fields
+                .get(name)
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .ok_or_else(|| FnoxError::Config(format!("{} is required", name)))
+        };
+
+        // Helper to get an optional field
+        let get_optional =
+            |name: &str| -> Option<String> { fields.get(name).filter(|s| !s.is_empty()).cloned() };
+
+        match provider_type {
+            "plain" => Ok(ProviderConfig::Plain),
+            "age" => Ok(ProviderConfig::AgeEncryption {
+                recipients: vec![get_required("recipient")?],
+                key_file: None,
+            }),
+            "keepass" => Ok(ProviderConfig::KeePass {
+                database: get_required("database")?,
+                keyfile: get_optional("keyfile"),
+                password: None, // Always use env var
+            }),
+            "password-store" => Ok(ProviderConfig::PasswordStore {
+                prefix: get_optional("prefix"),
+                store_dir: get_optional("store_dir"),
+                gpg_opts: None,
+            }),
+            "1password" => Ok(ProviderConfig::OnePassword {
+                vault: get_optional("vault"),
+                account: get_optional("account"),
+            }),
+            "bitwarden" => Ok(ProviderConfig::Bitwarden {
+                collection: get_optional("collection"),
+                organization_id: get_optional("organization_id"),
+                profile: get_optional("profile"),
+                backend: None,
+            }),
+            "infisical" => Ok(ProviderConfig::Infisical {
+                project_id: get_optional("project_id"),
+                environment: get_optional("environment"),
+                path: get_optional("path"),
+            }),
+            "aws-kms" => Ok(ProviderConfig::AwsKms {
+                key_id: get_required("key_id")?,
+                region: get_required("region")?,
+            }),
+            "azure-kms" => Ok(ProviderConfig::AzureKms {
+                vault_url: get_required("vault_url")?,
+                key_name: get_required("key_name")?,
+            }),
+            "gcp-kms" => Ok(ProviderConfig::GcpKms {
+                project: get_required("project")?,
+                location: get_required("location")?,
+                keyring: get_required("keyring")?,
+                key: get_required("key")?,
+            }),
+            "aws-sm" => Ok(ProviderConfig::AwsSecretsManager {
+                region: get_required("region")?,
+                prefix: get_optional("prefix"),
+            }),
+            "aws-ps" => Ok(ProviderConfig::AwsParameterStore {
+                region: get_required("region")?,
+                prefix: get_optional("prefix"),
+            }),
+            "azure-sm" => Ok(ProviderConfig::AzureSecretsManager {
+                vault_url: get_required("vault_url")?,
+                prefix: get_optional("prefix"),
+            }),
+            "gcp-sm" => Ok(ProviderConfig::GoogleSecretManager {
+                project: get_required("project")?,
+                prefix: get_optional("prefix"),
+            }),
+            "vault" => Ok(ProviderConfig::HashiCorpVault {
+                address: get_required("address")?,
+                path: get_optional("path"),
+                token: get_optional("token"),
+            }),
+            "keychain" => Ok(ProviderConfig::Keychain {
+                service: get_required("service")?,
+                prefix: get_optional("prefix"),
+            }),
+            _ => Err(FnoxError::Config(format!(
+                "Unknown provider type: {}",
+                provider_type
+            ))),
+        }
     }
 }
 
