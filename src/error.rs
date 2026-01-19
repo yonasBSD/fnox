@@ -8,7 +8,6 @@ pub enum FnoxError {
     // ========================================================================
     // Configuration Errors
     // ========================================================================
-    #[allow(dead_code)]
     #[error("Configuration file not found: {}", path.display())]
     #[diagnostic(
         code(fnox::config::not_found),
@@ -381,6 +380,18 @@ pub enum FnoxError {
     // ========================================================================
     // Input/Output Errors
     // ========================================================================
+    #[error("Failed to write export to file: {}", path.display())]
+    #[diagnostic(
+        code(fnox::export::write_failed),
+        help("Ensure you have write permissions for the output path")
+    )]
+    ExportWriteFailed {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[allow(dead_code)]
     #[error("Failed to read from stdin")]
     #[diagnostic(code(fnox::io::stdin_read_failed))]
     StdinReadFailed {
@@ -423,6 +434,13 @@ pub enum FnoxError {
     Yaml {
         #[source]
         source: serde_yaml::Error,
+    },
+
+    #[error("TOML serialization error")]
+    #[diagnostic(code(fnox::toml::error))]
+    Toml {
+        #[source]
+        source: toml_edit::ser::Error,
     },
 }
 
