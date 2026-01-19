@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.0](https://github.com/jdx/fnox/compare/v1.8.0..v1.9.0) - 2026-01-19
+
+### 🚀 Features
+
+- add authentication prompting for expired credentials by [@jdx](https://github.com/jdx) in [#184](https://github.com/jdx/fnox/pull/184)
+- add LLM-generated editorialized release notes by [@jdx](https://github.com/jdx) in [#185](https://github.com/jdx/fnox/pull/185)
+
+### 🐛 Bug Fixes
+
+- remove LLM generation from release-plz by [@jdx](https://github.com/jdx) in [#186](https://github.com/jdx/fnox/pull/186)
+
+### 🚜 Refactor
+
+- **(edit)** batch resolve secrets by profile for efficiency by [@johnpyp](https://github.com/johnpyp) in [#182](https://github.com/jdx/fnox/pull/182)
+
 ## [1.8.0](https://github.com/jdx/fnox/compare/v1.7.0..v1.8.0) - 2026-01-17
 
 ### 🚀 Features
