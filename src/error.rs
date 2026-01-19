@@ -17,7 +17,6 @@ pub enum FnoxError {
     )]
     ConfigFileNotFound { path: std::path::PathBuf },
 
-    #[allow(dead_code)]
     #[error("Failed to read configuration file: {}", path.display())]
     #[diagnostic(
         code(fnox::config::read_failed),
@@ -29,7 +28,6 @@ pub enum FnoxError {
         source: std::io::Error,
     },
 
-    #[allow(dead_code)]
     #[error("Failed to write configuration file: {}", path.display())]
     #[diagnostic(
         code(fnox::config::write_failed),
@@ -375,7 +373,6 @@ pub enum FnoxError {
     // ========================================================================
     // Input/Output Errors
     // ========================================================================
-    #[allow(dead_code)]
     #[error("Failed to read from stdin")]
     #[diagnostic(code(fnox::io::stdin_read_failed))]
     StdinReadFailed {
