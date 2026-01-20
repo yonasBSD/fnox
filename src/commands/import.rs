@@ -223,7 +223,7 @@ impl ImportCommand {
                 // Encrypt the value (provider already validated as encryption provider)
                 match provider.encrypt(&value).await {
                     Ok(encrypted) => {
-                        secret_config.value = Some(encrypted);
+                        secret_config.set_value(Some(encrypted));
                     }
                     Err(e) => {
                         return Err(FnoxError::ImportEncryptionFailed {

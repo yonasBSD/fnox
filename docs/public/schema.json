@@ -8,7 +8,7 @@
       "type": ["string", "null"]
     },
     "default_provider": {
-      "description": "Default provider name for default profile\nWrapped in SpannedValue to track source location for error reporting.",
+      "description": "Default provider name for default profile",
       "anyOf": [
         {
           "$ref": "#/$defs/string"
@@ -92,7 +92,7 @@
       "type": "object",
       "properties": {
         "default_provider": {
-          "description": "Default provider name for this profile\nWrapped in SpannedValue to track source location for error reporting.",
+          "description": "Default provider name for this profile",
           "anyOf": [
             {
               "$ref": "#/$defs/string"
@@ -473,7 +473,7 @@
           ]
         },
         "provider": {
-          "description": "Provider to fetch from (age, aws-kms, 1password, aws, etc.)\nWrapped in SpannedValue to track source location for error reporting.",
+          "description": "Provider to fetch from (age, aws-kms, 1password, aws, etc.)",
           "anyOf": [
             {
               "$ref": "#/$defs/string"
@@ -485,7 +485,14 @@
         },
         "value": {
           "description": "Value for the provider (secret name, encrypted blob, etc.)",
-          "type": ["string", "null"]
+          "anyOf": [
+            {
+              "$ref": "#/$defs/string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false

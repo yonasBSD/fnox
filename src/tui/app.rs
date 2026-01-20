@@ -709,7 +709,7 @@ impl App {
                 // Note: Actually saving would require modifying the config file
                 // For now, just update the in-memory state
                 let mut secret_config = SecretConfig::new();
-                secret_config.value = Some(value.clone());
+                secret_config.set_value(Some(value.clone()));
                 self.secrets.insert(key.clone(), secret_config);
                 self.resolved_values.insert(key.clone(), Some(value));
                 self.status_message = Some(format!("Set {} (in memory only)", key));

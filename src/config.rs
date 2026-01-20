@@ -47,7 +47,6 @@ pub struct Config {
     pub providers: IndexMap<String, ProviderConfig>,
 
     /// Default provider name for default profile
-    /// Wrapped in SpannedValue to track source location for error reporting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default_provider: Option<SpannedValue<String>>,
 
@@ -101,13 +100,12 @@ pub struct SecretConfig {
     pub default: Option<String>,
 
     /// Provider to fetch from (age, aws-kms, 1password, aws, etc.)
-    /// Wrapped in SpannedValue to track source location for error reporting.
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<SpannedValue<String>>,
 
     /// Value for the provider (secret name, encrypted blob, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<String>,
+    value: Option<SpannedValue<String>>,
 
     /// Path to the config file where this secret was defined (not serialized)
     #[serde(skip)]
@@ -123,7 +121,6 @@ pub struct ProfileConfig {
     pub providers: IndexMap<String, ProviderConfig>,
 
     /// Default provider name for this profile
-    /// Wrapped in SpannedValue to track source location for error reporting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default_provider: Option<SpannedValue<String>>,
 
@@ -823,7 +820,7 @@ impl Config {
         profile: &str,
     ) -> Option<crate::error::ValidationIssue> {
         // Early return if value is not an empty string
-        let Some(value) = secret.value.as_deref() else {
+        let Some(value) = secret.value() else {
             return None; // No value specified - not an issue
         };
         if !value.is_empty() {
@@ -1051,7 +1048,7 @@ impl SecretConfig {
 
     /// Check if this secret has any value (provider, value, or default)
     pub fn has_value(&self) -> bool {
-        self.provider().is_some() || self.value.is_some() || self.default.is_some()
+        self.provider().is_some() || self.value().is_some() || self.default.is_some()
     }
 
     /// Get the provider name, if set.
@@ -1068,6 +1065,18 @@ impl SecretConfig {
     /// Set the provider name (without span information).
     pub fn set_provider(&mut self, provider: Option<String>) {
         self.provider = provider.map(SpannedValue::without_span);
+    }
+
+    /// Get the value, if set.
+    pub fn value(&self) -> Option<&str> {
+        self.value
+            .as_ref()
+            .map(|s: &SpannedValue<String>| s.value().as_str())
+    }
+
+    /// Set the value (without span information).
+    pub fn set_value(&mut self, value: Option<String>) {
+        self.value = value.map(SpannedValue::without_span);
     }
 }
 
@@ -1170,7 +1179,7 @@ mod tests {
             .providers
             .insert("plain".to_string(), ProviderConfig::Plain);
         let mut secret = SecretConfig::new();
-        secret.value = Some("test-value".to_string());
+        secret.set_value(Some("test-value".to_string()));
         prod_profile
             .secrets
             .insert("TEST_SECRET".to_string(), secret);

@@ -512,10 +512,10 @@ fn render_secret_detail(app: &App, frame: &mut Frame, secret_key: &str) {
         }
 
         // Provider key/value
-        if let Some(ref value) = config.value {
+        if let Some(value) = config.value() {
             lines.push(Line::from(vec![
                 Span::styled("Provider Key: ", Style::default().fg(Colors::cyan())),
-                Span::raw(value.as_str()),
+                Span::raw(value),
             ]));
         }
 

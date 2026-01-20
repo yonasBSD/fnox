@@ -167,7 +167,7 @@ async fn try_resolve_from_provider(
     secret_config: &SecretConfig,
 ) -> Result<Option<String>> {
     // Only try provider if we have a value to pass to it
-    let Some(provider_value) = &secret_config.value else {
+    let Some(provider_value) = secret_config.value() else {
         return Ok(None);
     };
 
@@ -297,7 +297,7 @@ pub async fn resolve_secrets_batch(
 
     for (key, secret_config) in secrets {
         // Check if we can resolve from provider
-        if let Some(ref provider_value) = secret_config.value {
+        if let Some(provider_value) = secret_config.value() {
             // Determine which provider to use
             let provider_name = if let Some(provider_name) = secret_config.provider() {
                 provider_name.to_string()
@@ -312,7 +312,7 @@ pub async fn resolve_secrets_batch(
             by_provider
                 .entry(provider_name)
                 .or_default()
-                .push((key.clone(), provider_value.clone()));
+                .push((key.clone(), provider_value.to_string()));
         } else {
             // No value for provider, use individual resolution
             no_provider.push(key.clone());

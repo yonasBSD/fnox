@@ -437,7 +437,7 @@ impl EditCommand {
                         )));
                     }
                     // Read-only and unchanged - restore original encrypted value
-                    if let Some(original_value) = &secret_entry.original_config.value {
+                    if let Some(original_value) = secret_entry.original_config.value() {
                         Self::set_secret_value(value, original_value);
                     }
                     continue;
@@ -452,7 +452,7 @@ impl EditCommand {
 
                 if !value_changed && !provider_changed {
                     // Nothing changed - restore original encrypted value to avoid version control churn
-                    if let Some(original_value) = &secret_entry.original_config.value {
+                    if let Some(original_value) = secret_entry.original_config.value() {
                         Self::set_secret_value(value, original_value);
                     }
                     continue;

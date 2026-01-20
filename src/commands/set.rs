@@ -208,21 +208,21 @@ impl SetCommand {
         }
 
         if let Some(ref key_name) = self.key_name {
-            secret_config.value = Some(key_name.clone());
+            secret_config.set_value(Some(key_name.clone()));
         } else if let Some(ref value) = secret_value {
             // Priority order: remote key name, encrypted value, then plaintext
             if let Some(remote_key) = remote_key_name {
                 // Store the key name for remote storage providers
-                secret_config.value = Some(remote_key);
+                secret_config.set_value(Some(remote_key));
             } else if let Some(encrypted) = encrypted_value {
                 // Store encrypted value for encryption providers
-                secret_config.value = Some(encrypted);
+                secret_config.set_value(Some(encrypted));
             } else if provider_name_to_use.is_some() {
                 // Provider specified or default provider available (but not an encryption/remote provider)
-                secret_config.value = Some(value.clone());
+                secret_config.set_value(Some(value.clone()));
             } else {
                 // No provider specified or available, store as default value
-                secret_config.value = Some(value.clone());
+                secret_config.set_value(Some(value.clone()));
                 secret_config.default = Some(value.clone());
             }
         }
@@ -277,12 +277,12 @@ impl SetCommand {
             if let Some(provider) = secret_config.provider() {
                 println!("  provider: {}", console::style(provider).green());
             }
-            if let Some(ref value) = secret_config.value {
+            if let Some(value) = secret_config.value() {
                 // Use character-aware truncation to avoid panicking on multi-byte UTF-8
                 let display_value = if value.chars().count() > 50 {
                     format!("{}...", value.chars().take(50).collect::<String>())
                 } else {
-                    value.clone()
+                    value.to_string()
                 };
                 println!("  value: {}", console::style(display_value).dim());
             }
