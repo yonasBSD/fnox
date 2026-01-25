@@ -3,8 +3,10 @@ use crate::config::Config;
 use crate::error::{FnoxError, Result};
 use clap::{Args, ValueEnum};
 use console;
+use miette::{NamedSource, SourceSpan};
 use regex::Regex;
 use std::io::{self, Read};
+use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 use strum::{Display, EnumString, VariantNames};
 
@@ -268,11 +270,17 @@ impl ImportCommand {
     }
 
     fn parse_input(&self, input: &str) -> Result<HashMap<String, String>> {
+        let source_name = self
+            .input
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<stdin>".to_string());
+
         match self.format {
             ImportFormat::Env => self.parse_env(input),
-            ImportFormat::Json => self.parse_json(input),
-            ImportFormat::Yaml => self.parse_yaml(input),
-            ImportFormat::Toml => self.parse_toml(input),
+            ImportFormat::Json => self.parse_json(input, &source_name),
+            ImportFormat::Yaml => self.parse_yaml(input, &source_name),
+            ImportFormat::Toml => self.parse_toml(input, &source_name),
         }
     }
 
@@ -319,20 +327,107 @@ impl ImportCommand {
         Ok(())
     }
 
-    fn parse_json(&self, input: &str) -> Result<HashMap<String, String>> {
-        let data: serde_json::Value = serde_json::from_str(input)?;
+    fn parse_json(&self, input: &str, source_name: &str) -> Result<HashMap<String, String>> {
+        let data: serde_json::Value = serde_json::from_str(input).map_err(|e| {
+            // serde_json provides line and column
+            let offset = self.offset_from_line_col(input, e.line(), e.column());
+            FnoxError::ImportParseErrorWithSource {
+                format: "JSON".to_string(),
+                details: e.to_string(),
+                src: Arc::new(NamedSource::new(source_name, Arc::new(input.to_string()))),
+                span: SourceSpan::new(offset.into(), 1usize),
+            }
+        })?;
         self.extract_string_values(&data)
     }
 
-    fn parse_yaml(&self, input: &str) -> Result<HashMap<String, String>> {
-        let data: serde_yaml::Value = serde_yaml::from_str(input)?;
+    fn parse_yaml(&self, input: &str, source_name: &str) -> Result<HashMap<String, String>> {
+        let data: serde_yaml::Value = serde_yaml::from_str(input).map_err(|e| {
+            // serde_yaml provides location via e.location()
+            // Note: serde_yaml uses 0-indexed line/column, so we add 1 for our 1-indexed function
+            if let Some(loc) = e.location() {
+                let offset = self.offset_from_line_col(input, loc.line() + 1, loc.column() + 1);
+                FnoxError::ImportParseErrorWithSource {
+                    format: "YAML".to_string(),
+                    details: e.to_string(),
+                    src: Arc::new(NamedSource::new(source_name, Arc::new(input.to_string()))),
+                    span: SourceSpan::new(offset.into(), 1usize),
+                }
+            } else {
+                FnoxError::Config(format!("Failed to parse YAML: {}", e))
+            }
+        })?;
         self.extract_string_values(&data)
     }
 
-    fn parse_toml(&self, input: &str) -> Result<HashMap<String, String>> {
-        let data: serde_json::Value = toml_edit::de::from_str(input)
-            .map_err(|e| FnoxError::Config(format!("Failed to parse TOML: {}", e)))?;
+    fn parse_toml(&self, input: &str, source_name: &str) -> Result<HashMap<String, String>> {
+        let data: serde_json::Value = toml_edit::de::from_str(input).map_err(|e| {
+            // toml_edit provides span via e.span()
+            if let Some(span) = e.span() {
+                FnoxError::ImportParseErrorWithSource {
+                    format: "TOML".to_string(),
+                    details: e.to_string(),
+                    src: Arc::new(NamedSource::new(source_name, Arc::new(input.to_string()))),
+                    span: SourceSpan::new(span.start.into(), span.end - span.start),
+                }
+            } else {
+                FnoxError::Config(format!("Failed to parse TOML: {}", e))
+            }
+        })?;
         self.extract_string_values(&data)
+    }
+
+    /// Convert line/column (1-indexed) to byte offset for miette source spans.
+    ///
+    /// Handles both LF and CRLF line endings (CRLF is handled because we detect
+    /// line boundaries at '\n', and '\r' is just part of line content).
+    /// The column is treated as a character count, which is converted to the
+    /// correct byte offset for multi-byte UTF-8.
+    ///
+    /// Note: serde_json may return line=0, col=0 for certain errors (type mismatches,
+    /// custom errors) where position info isn't available. We return 0 in that case.
+    fn offset_from_line_col(&self, input: &str, line: usize, col: usize) -> usize {
+        // Handle invalid 0-indexed values (serde_json can return 0,0 for some errors)
+        if line == 0 || col == 0 {
+            return 0;
+        }
+
+        let mut current_line = 1;
+        let mut line_start_byte = 0;
+
+        // Find the byte offset of the target line by scanning for newlines
+        for (byte_idx, c) in input.char_indices() {
+            if current_line == line {
+                // Found the start of target line
+                line_start_byte = byte_idx;
+                break;
+            }
+            if c == '\n' {
+                current_line += 1;
+                // Set line_start_byte to byte after newline for next iteration
+                line_start_byte = byte_idx + 1;
+            }
+        }
+
+        // If requested line is beyond the file, return end of input
+        if current_line < line {
+            return input.len();
+        }
+
+        // Defensive: clamp line_start_byte to input length
+        // (should not happen with current logic, but guards against edge cases)
+        let line_start_byte = line_start_byte.min(input.len());
+
+        // Now count characters from line_start to find the column byte offset
+        // col is 1-indexed, so we want to skip (col - 1) characters
+        let chars_to_skip = col.saturating_sub(1);
+        let line_slice = &input[line_start_byte..];
+
+        line_slice
+            .char_indices()
+            .nth(chars_to_skip)
+            .map(|(byte_offset, _)| line_start_byte + byte_offset)
+            .unwrap_or(input.len())
     }
 
     fn extract_string_values<V>(&self, data: &V) -> Result<HashMap<String, String>>
