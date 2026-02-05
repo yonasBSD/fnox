@@ -1122,6 +1122,16 @@
         "long": ["no-color"],
         "hide": false,
         "global": true
+      },
+      {
+        "name": "no-defaults",
+        "usage": "--no-defaults",
+        "help": "Do not merge top-level secrets into the selected profile",
+        "help_first_line": "Do not merge top-level secrets into the selected profile",
+        "short": [],
+        "long": ["no-defaults"],
+        "hide": false,
+        "global": true
       }
     ],
     "mounts": [],

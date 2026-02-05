@@ -32,6 +32,10 @@ What to do if a secret is missing (error, warn, ignore)
 
 Disable colored output
 
+### `--no-defaults`
+
+Do not merge top-level secrets into the selected profile
+
 ## Subcommands
 
 - [`fnox activate [--no-hook-env] [SHELL]`](/cli/activate.md)

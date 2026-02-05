@@ -1,5 +1,6 @@
 use crate::env;
 use crate::error::{FnoxError, Result};
+use crate::settings::Settings;
 use crate::source_registry;
 use crate::spanned::SpannedValue;
 use clap::ValueEnum;
@@ -655,20 +656,25 @@ impl Config {
     /// This allows fnox.$FNOX_PROFILE.toml files to work without requiring a [profiles] section.
     pub fn get_secrets(&self, profile: &str) -> Result<IndexMap<String, SecretConfig>> {
         if profile == "default" {
-            Ok(self.secrets.clone())
+            return Ok(self.secrets.clone());
+        }
+
+        let mut secrets = if Settings::get().no_defaults {
+            // Profile-only mode: do not merge top-level secrets.
+            IndexMap::new()
         } else {
             // Start with top-level secrets as base
-            let mut secrets = self.secrets.clone();
+            self.secrets.clone()
+        };
 
-            // Get profile-specific secrets and merge/override (if profile exists)
-            if let Some(profile_config) = self.profiles.get(profile) {
-                // Profile-specific secrets override top-level ones
-                secrets.extend(profile_config.secrets.clone());
-            }
-            // If profile doesn't exist in [profiles], that's OK - just use top-level secrets
-            // This allows fnox.$FNOX_PROFILE.toml to work without requiring [profiles.xxx]
-            Ok(secrets)
+        // Get profile-specific secrets and merge/override (if profile exists)
+        if let Some(profile_config) = self.profiles.get(profile) {
+            // Profile-specific secrets override top-level ones
+            secrets.extend(profile_config.secrets.clone());
         }
+        // If profile doesn't exist in [profiles], that's OK - just use top-level secrets
+        // This allows fnox.$FNOX_PROFILE.toml to work without requiring [profiles.xxx]
+        Ok(secrets)
     }
 
     /// Get effective secrets (default or profile, mutable)
@@ -1279,5 +1285,50 @@ mod tests {
             !toml.contains("prod"),
             "Empty profile name should not appear"
         );
+    }
+
+    #[test]
+    fn test_no_defaults_profile_only_secrets() {
+        crate::settings::Settings::reset_for_tests();
+        crate::settings::Settings::set_cli_snapshot(crate::settings::CliSnapshot {
+            age_key_file: None,
+            profile: Some("prod".to_string()),
+            if_missing: None,
+            no_defaults: true,
+        });
+
+        let mut config = Config::new();
+        config
+            .secrets
+            .insert("DEFAULT_ONLY".to_string(), SecretConfig::new());
+
+        let mut prod_profile = ProfileConfig::new();
+        prod_profile
+            .secrets
+            .insert("PROD_ONLY".to_string(), SecretConfig::new());
+        config.profiles.insert("prod".to_string(), prod_profile);
+
+        let secrets = config.get_secrets("prod").unwrap();
+        assert!(secrets.contains_key("PROD_ONLY"));
+        assert!(!secrets.contains_key("DEFAULT_ONLY"));
+    }
+
+    #[test]
+    fn test_no_defaults_profile_without_section_is_empty() {
+        crate::settings::Settings::reset_for_tests();
+        crate::settings::Settings::set_cli_snapshot(crate::settings::CliSnapshot {
+            age_key_file: None,
+            profile: Some("prod".to_string()),
+            if_missing: None,
+            no_defaults: true,
+        });
+
+        let mut config = Config::new();
+        config
+            .secrets
+            .insert("DEFAULT_ONLY".to_string(), SecretConfig::new());
+
+        let secrets = config.get_secrets("prod").unwrap();
+        assert!(secrets.is_empty());
     }
 }
