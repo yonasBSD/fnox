@@ -149,6 +149,36 @@ impl AddCommand {
                 key_file: OptionStringOrSecretRef::none(),
                 auth_command: None,
             },
+            ProviderType::Fido2 => {
+                let provider_name = self.provider.clone();
+                let (credential_id_hex, salt_hex, rp_id, _pin) =
+                    tokio::task::spawn_blocking(move || {
+                        crate::providers::fido2::setup::setup_fido2(&provider_name)
+                    })
+                    .await
+                    .map_err(|e| FnoxError::Provider(format!("FIDO2 setup task failed: {e}")))??;
+                // PIN is not stored in config — it will be prompted at runtime
+                crate::config::ProviderConfig::Fido2 {
+                    credential_id: StringOrSecretRef::from(credential_id_hex.as_str()),
+                    salt: StringOrSecretRef::from(salt_hex.as_str()),
+                    rp_id: StringOrSecretRef::from(rp_id.as_str()),
+                    pin: OptionStringOrSecretRef::none(),
+                    auth_command: None,
+                }
+            }
+            ProviderType::Yubikey => {
+                let provider_name = self.provider.clone();
+                let (challenge_hex, slot_str) = tokio::task::spawn_blocking(move || {
+                    crate::providers::yubikey::setup::setup_yubikey(&provider_name)
+                })
+                .await
+                .map_err(|e| FnoxError::Provider(format!("YubiKey setup task failed: {e}")))??;
+                crate::config::ProviderConfig::Yubikey {
+                    challenge: StringOrSecretRef::from(challenge_hex.as_str()),
+                    slot: StringOrSecretRef::from(slot_str.as_str()),
+                    auth_command: None,
+                }
+            }
             ProviderType::Infisical => crate::config::ProviderConfig::Infisical {
                 project_id: OptionStringOrSecretRef::literal("your-project-id"),
                 environment: OptionStringOrSecretRef::literal("dev"),

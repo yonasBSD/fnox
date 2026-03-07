@@ -31,6 +31,9 @@ jobs:
           submodules: recursive
       - uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d # v3
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
       - name: Install Rust components
         run: rustup component add rustfmt clippy
       - name: Build
@@ -107,10 +110,27 @@ jobs:
             hashicorp/vault:latest
           # Start Infisical (self-hosted with PostgreSQL and Redis)
           docker compose -f test/docker-compose.infisical-ci.yml up -d
+          # Start LocalStack for AWS STS lease tests
+          docker run -d --name localstack \
+            -p 4566:4566 \
+            -e SERVICES=sts,iam \
+            localstack/localstack:latest
           # Wait for services to be ready
-          sleep 5
-          echo "VAULT_ADDR=http://localhost:8200" >> "$GITHUB_ENV"
-          echo "VAULT_TOKEN=fnox-test-token" >> "$GITHUB_ENV"
+          # Poll LocalStack health endpoint (can take 10-30s on cold runners)
+          for _i in $(seq 1 30); do
+            curl -sf http://localhost:4566/_localstack/health && break
+            sleep 2
+          done
+          # Wait for Vault to be ready
+          for _i in $(seq 1 15); do
+            curl -sf http://localhost:8200/v1/sys/health && break
+            sleep 1
+          done
+          {
+            echo "VAULT_ADDR=http://localhost:8200"
+            echo "VAULT_TOKEN=fnox-test-token"
+            echo "LOCALSTACK_ENDPOINT=http://localhost:4566"
+          } >> "$GITHUB_ENV"
       - name: Setup Bitwarden for tests
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
@@ -171,11 +191,11 @@ jobs:
           submodules: recursive
       - uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d # v3
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
-      - name: Install gnome-keyring for tests (Ubuntu)
+      - name: Install system dependencies (Ubuntu)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y gnome-keyring libsecret-tools
+          sudo apt-get install -y gnome-keyring libsecret-tools libudev-dev
       - name: Setup gnome-keyring (Ubuntu)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
@@ -219,6 +239,8 @@ jobs:
           submodules: recursive
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
       - uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d # v3
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
       - run: cargo msrv verify
 
   final:

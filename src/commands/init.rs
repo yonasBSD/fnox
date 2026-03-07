@@ -119,11 +119,13 @@ impl InitCommand {
         let provider_config =
             ProviderConfig::from_wizard_fields(provider_info.provider_type, &fields)?;
 
-        // Test the connection using the Provider trait
-        self.test_provider_connection(&provider_config).await;
-
-        // Get provider name
+        // Get provider name before testing, since some providers (FIDO2, YubiKey)
+        // use the provider name as HKDF context for key derivation.
         let provider_name = self.get_provider_name(provider_info.default_name)?;
+
+        // Test the connection using the Provider trait
+        self.test_provider_connection(&provider_name, &provider_config)
+            .await;
 
         // Create config with provider
         let mut config = Config::new();
@@ -253,12 +255,16 @@ impl InitCommand {
     }
 
     /// Test the provider connection and print the result
-    async fn test_provider_connection(&self, provider_config: &ProviderConfig) {
+    async fn test_provider_connection(
+        &self,
+        provider_name: &str,
+        provider_config: &ProviderConfig,
+    ) {
         println!("\n🔍 Testing provider connection...");
 
         // Wizard-created configs always have literal values, so we can use try_to_resolved
         match provider_config.try_to_resolved() {
-            Ok(resolved) => match get_provider_from_resolved(&resolved) {
+            Ok(resolved) => match get_provider_from_resolved(provider_name, &resolved) {
                 Ok(provider) => match provider.test_connection().await {
                     Ok(()) => {
                         println!("✓ Provider connection successful!\n");

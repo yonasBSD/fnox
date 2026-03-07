@@ -43,6 +43,10 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "is_false")]
     pub root: bool,
 
+    /// Lease backend configurations (for default profile)
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub leases: IndexMap<String, crate::lease_backends::LeaseBackendConfig>,
+
     /// Provider configurations (for default profile)
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub providers: IndexMap<String, ProviderConfig>,
@@ -82,6 +86,11 @@ pub struct Config {
     /// Track which config file the default_provider came from (not serialized)
     #[serde(skip)]
     pub default_provider_source: Option<PathBuf>,
+
+    /// The project root directory — the nearest directory to cwd that contains
+    /// a config file. Used for scoping the lease ledger per-project.
+    #[serde(skip)]
+    pub project_dir: Option<PathBuf>,
 }
 
 /// Cached sync data for a secret (provider + encrypted value)
@@ -115,6 +124,11 @@ pub struct SecretConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<SpannedValue<String>>,
 
+    /// Whether to inject this secret into env vars (default: true)
+    /// When false, the secret is only accessible via `fnox get`
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub env: bool,
+
     /// Write secret to a temporary file and set env var to the file path instead of the secret value
     #[serde(default, skip_serializing_if = "is_false")]
     pub as_file: bool,
@@ -136,6 +150,10 @@ pub struct SecretConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileConfig {
+    /// Lease backend configurations for this profile
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub leases: IndexMap<String, crate::lease_backends::LeaseBackendConfig>,
+
     /// Provider configurations for this profile
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub providers: IndexMap<String, ProviderConfig>,
@@ -249,7 +267,12 @@ impl Config {
                     help: "Run 'fnox init' to create a configuration file".to_string(),
                 })
             }
-            Ok((config, _)) => Ok(config),
+            Ok((mut config, _)) => {
+                // Find the nearest directory to cwd that contains a config file.
+                // This is the project root used for scoping the lease ledger.
+                config.project_dir = Self::find_project_dir(&current_dir);
+                Ok(config)
+            }
             Err(e) => Err(e),
         }
     }
@@ -311,6 +334,23 @@ impl Config {
         }
 
         Ok((config, found))
+    }
+
+    /// Find the nearest directory to `start` that contains a config file.
+    /// Walks upward from `start` and returns the first match.
+    fn find_project_dir(start: &Path) -> Option<PathBuf> {
+        let profile = crate::settings::Settings::get().profile.clone();
+        let filenames = all_config_filenames(Some(&profile));
+        let mut dir = Some(start);
+        while let Some(d) = dir {
+            for filename in &filenames {
+                if d.join(filename).exists() {
+                    return Some(d.to_path_buf());
+                }
+            }
+            dir = d.parent();
+        }
+        None
     }
 
     /// Get the path to the global config file
@@ -391,6 +431,11 @@ impl Config {
             merged.default_provider_source = overlay.default_provider_source;
         }
 
+        // Merge lease backends (overlay takes precedence)
+        for (name, lease) in overlay.leases {
+            merged.leases.insert(name, lease);
+        }
+
         // Merge providers (overlay takes precedence)
         for (name, provider) in overlay.providers {
             merged.providers.insert(name, provider);
@@ -415,6 +460,9 @@ impl Config {
         for (name, profile) in overlay.profiles {
             if let Some(existing_profile) = merged.profiles.get_mut(&name) {
                 // Merge existing profile
+                for (lease_name, lease) in profile.leases {
+                    existing_profile.leases.insert(lease_name, lease);
+                }
                 for (provider_name, provider) in profile.providers {
                     existing_profile.providers.insert(provider_name, provider);
                 }
@@ -747,6 +795,7 @@ impl Config {
         Self {
             import: Vec::new(),
             root: false,
+            leases: IndexMap::new(),
             providers: IndexMap::new(),
             default_provider: None,
             secrets: IndexMap::new(),
@@ -757,6 +806,7 @@ impl Config {
             provider_sources: HashMap::new(),
             secret_sources: HashMap::new(),
             default_provider_source: None,
+            project_dir: None,
         }
     }
 
@@ -834,6 +884,22 @@ impl Config {
         } else {
             self.get_profile_secrets_mut(profile)
         }
+    }
+
+    /// Get effective lease backends for a profile
+    pub fn get_leases(
+        &self,
+        profile: &str,
+    ) -> IndexMap<String, crate::lease_backends::LeaseBackendConfig> {
+        let mut leases = self.leases.clone();
+
+        if profile != "default"
+            && let Some(profile_config) = self.profiles.get(profile)
+        {
+            leases.extend(profile_config.leases.clone());
+        }
+
+        leases
     }
 
     /// Get effective providers for a profile
@@ -1207,6 +1273,7 @@ impl SecretConfig {
             default: None,
             provider: None,
             value: None,
+            env: true,
             as_file: false,
             json_path: None,
             sync: None,
@@ -1240,6 +1307,9 @@ impl SecretConfig {
                 IfMissing::Ignore => "ignore",
             };
             inline.insert("if_missing", toml_edit::Value::from(if_missing_str));
+        }
+        if !self.env {
+            inline.insert("env", toml_edit::Value::from(false));
         }
         if self.as_file {
             inline.insert("as_file", toml_edit::Value::from(true));
@@ -1294,6 +1364,7 @@ impl ProfileConfig {
     /// Create a new profile config
     pub fn new() -> Self {
         Self {
+            leases: IndexMap::new(),
             providers: IndexMap::new(),
             default_provider: None,
             secrets: IndexMap::new(),
@@ -1305,7 +1376,10 @@ impl ProfileConfig {
 
     /// Check if the profile is effectively empty (no serializable content)
     pub fn is_empty(&self) -> bool {
-        self.providers.is_empty() && self.secrets.is_empty() && self.default_provider().is_none()
+        self.leases.is_empty()
+            && self.providers.is_empty()
+            && self.secrets.is_empty()
+            && self.default_provider().is_none()
     }
 
     /// Get the default provider name, if set.
@@ -1338,6 +1412,14 @@ impl Default for ProfileConfig {
 
 fn is_false(value: &bool) -> bool {
     !value
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[cfg(test)]
