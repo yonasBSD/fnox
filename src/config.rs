@@ -14,12 +14,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use strum::VariantNames;
 
+/// Default config filename, used as the clap default for `--config`.
+pub const DEFAULT_CONFIG_FILENAME: &str = "fnox.toml";
+
 /// Returns all config filenames in load order (first = lowest priority, last = highest priority).
 ///
 /// Order: main configs → profile configs → local configs
-/// Within each group, dotfiles come first (higher priority than non-dotfiles).
+/// Within each group, non-dotfiles come first (lower priority); dotfiles follow (higher priority).
 pub fn all_config_filenames(profile: Option<&str>) -> Vec<String> {
-    let mut files = vec!["fnox.toml".to_string(), ".fnox.toml".to_string()];
+    let mut files = vec![
+        DEFAULT_CONFIG_FILENAME.to_string(),
+        ".fnox.toml".to_string(),
+    ];
     if let Some(p) = profile.filter(|p| *p != "default") {
         files.push(format!("fnox.{p}.toml"));
         files.push(format!(".fnox.{p}.toml"));
@@ -27,6 +33,44 @@ pub fn all_config_filenames(profile: Option<&str>) -> Vec<String> {
     files.push("fnox.local.toml".to_string());
     files.push(".fnox.local.toml".to_string());
     files
+}
+
+/// Find the most appropriate existing config file in `dir` for writing.
+///
+/// When a non-default profile is active, prefers the profile-specific file
+/// (e.g. `fnox.staging.toml`) if it exists, so secrets stay scoped to that
+/// profile. Otherwise falls back to the lowest-priority existing file.
+/// If no config files exist yet, returns `fnox.toml`.
+pub fn find_local_config(dir: &Path, profile: Option<&str>) -> PathBuf {
+    // If a non-default profile is specified, prefer its config file first
+    if let Some(p) = profile.filter(|p| *p != "default") {
+        for name in [format!("fnox.{p}.toml"), format!(".fnox.{p}.toml")] {
+            let path = dir.join(&name);
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+
+    // Fall back to lowest-priority existing base file.
+    // When a profile is active, exclude local files (fnox.local.toml, .fnox.local.toml)
+    // to avoid silently routing profile-scoped secrets into a gitignored local-override file.
+    let is_profiled = profile.is_some_and(|p| p != "default");
+    for name in &["fnox.toml", ".fnox.toml"] {
+        let path = dir.join(name);
+        if path.exists() {
+            return path;
+        }
+    }
+    if !is_profiled {
+        for name in &["fnox.local.toml", ".fnox.local.toml"] {
+            let path = dir.join(name);
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+    dir.join(DEFAULT_CONFIG_FILENAME)
 }
 
 // Re-export ProviderConfig from providers module
@@ -1575,5 +1619,102 @@ mod tests {
 
         let secrets = config.get_secrets("prod").unwrap();
         assert!(secrets.is_empty());
+    }
+
+    #[test]
+    fn test_find_local_config_no_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = super::find_local_config(dir.path(), None);
+        assert_eq!(result, dir.path().join("fnox.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_only_fnox_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), None);
+        assert_eq!(result, dir.path().join("fnox.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_only_local_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.local.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), None);
+        assert_eq!(result, dir.path().join("fnox.local.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_both_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.toml"), "").unwrap();
+        std::fs::write(dir.path().join("fnox.local.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), None);
+        // Should pick fnox.toml (lowest priority)
+        assert_eq!(result, dir.path().join("fnox.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_only_dotfile() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".fnox.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), None);
+        assert_eq!(result, dir.path().join(".fnox.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.staging.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), Some("staging"));
+        assert_eq!(result, dir.path().join("fnox.staging.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_profile_with_base() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.toml"), "").unwrap();
+        std::fs::write(dir.path().join("fnox.staging.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), Some("staging"));
+        // Profile-specific file is preferred when profile is active
+        assert_eq!(result, dir.path().join("fnox.staging.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_default_profile_with_base() {
+        // Default profile should still pick fnox.toml (lowest priority)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.toml"), "").unwrap();
+        std::fs::write(dir.path().join("fnox.local.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), Some("default"));
+        assert_eq!(result, dir.path().join("fnox.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_profile_only_base_exists() {
+        // Profile specified but only base config exists — fall back to it
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), Some("staging"));
+        assert_eq!(result, dir.path().join("fnox.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_profile_skips_local_file() {
+        // When a profile is active and only fnox.local.toml exists,
+        // should NOT write there — fall through to creating fnox.toml
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.local.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), Some("staging"));
+        assert_eq!(result, dir.path().join("fnox.toml"));
+    }
+
+    #[test]
+    fn test_find_local_config_no_profile_uses_local_file() {
+        // Without a profile, fnox.local.toml is a valid write target
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("fnox.local.toml"), "").unwrap();
+        let result = super::find_local_config(dir.path(), None);
+        assert_eq!(result, dir.path().join("fnox.local.toml"));
     }
 }

@@ -1,5 +1,5 @@
 use crate::commands::Cli;
-use crate::config::{Config, IfMissing};
+use crate::config::{self, Config, IfMissing};
 use crate::error::{FnoxError, Result};
 use clap::Args;
 use std::io::{self, Read};
@@ -258,11 +258,16 @@ impl SetCommand {
             }
             global_path
         } else {
-            // Save to current directory's config
             let current_dir = std::env::current_dir().map_err(|e| {
                 FnoxError::Config(format!("Failed to get current directory: {}", e))
             })?;
-            current_dir.join(&cli.config)
+            // Only use auto-detection when --config is the clap default ("fnox.toml").
+            // Any other value means the user explicitly chose a config file.
+            if cli.config == std::path::Path::new(config::DEFAULT_CONFIG_FILENAME) {
+                config::find_local_config(&current_dir, Some(&profile))
+            } else {
+                current_dir.join(&cli.config)
+            }
         };
 
         if self.dry_run {
