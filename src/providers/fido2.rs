@@ -76,6 +76,7 @@ impl Fido2Provider {
         } else if atty::is(atty::Stream::Stderr) {
             let input = demand::Input::new("FIDO2 PIN (leave empty if not required)")
                 .placeholder("")
+                .password(true)
                 .run()
                 .map_err(|e| FnoxError::Provider(format!("Failed to read PIN: {e}")))?;
             if input.is_empty() { None } else { Some(input) }
@@ -173,6 +174,7 @@ pub mod setup {
         // Check if PIN is required
         let pin_input = demand::Input::new("FIDO2 PIN (leave empty if not set)")
             .placeholder("")
+            .password(true)
             .run()
             .map_err(|e| FnoxError::Config(format!("Failed to read PIN: {}", e)))?;
         let pin: Option<&str> = if pin_input.is_empty() {
