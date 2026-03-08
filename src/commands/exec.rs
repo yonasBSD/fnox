@@ -158,23 +158,52 @@ impl ExecCommand {
         // from the parent process environment so the child doesn't inherit them.
         drop(_temp_env_guard);
 
-        let status = cmd
-            .status()
+        let mut child = cmd.spawn().map_err(|e| FnoxError::CommandExecutionFailed {
+            command: self.command.join(" "),
+            source: e,
+        })?;
+
+        // Forward SIGINT/SIGTERM to the child so Ctrl-C and `kill` reach it.
+        #[cfg(unix)]
+        {
+            let child_pid = nix::unistd::Pid::from_raw(child.id() as i32);
+            unsafe {
+                // Ignore signals in the parent — the child handles them.
+                // When the child exits we propagate its exit code below.
+                signal_hook::low_level::register(signal_hook::consts::SIGINT, move || {
+                    nix::sys::signal::kill(child_pid, nix::sys::signal::SIGINT).ok();
+                })
+                .ok();
+                signal_hook::low_level::register(signal_hook::consts::SIGTERM, move || {
+                    nix::sys::signal::kill(child_pid, nix::sys::signal::SIGTERM).ok();
+                })
+                .ok();
+            }
+        }
+
+        let status = child
+            .wait()
             .map_err(|e| FnoxError::CommandExecutionFailed {
                 command: self.command.join(" "),
                 source: e,
             })?;
 
-        if !status.success()
-            && let Some(code) = status.code()
-        {
-            return Err(FnoxError::CommandExitFailed {
-                command: self.command.join(" "),
-                status: code,
-            });
+        // Temp files are cleaned up when _temp_files drops here
+        drop(_temp_files);
+
+        if !status.success() {
+            // Exit silently — the child already printed its own errors.
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::ExitStatusExt;
+                // If killed by signal, exit with 128+signal (standard convention)
+                if let Some(sig) = status.signal() {
+                    std::process::exit(128 + sig);
+                }
+            }
+            std::process::exit(status.code().unwrap_or(1));
         }
 
-        // Temp files are automatically deleted when _temp_files goes out of scope
         Ok(())
     }
 }
