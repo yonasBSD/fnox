@@ -8,6 +8,26 @@ use std::time::Duration;
 
 const URL: &str = "https://fnox.jdx.dev/leases/aws-sts";
 
+/// Env var names produced by the AWS STS backend (AssumeRole credentials).
+pub const PRODUCED_ENV_VARS: &[&str] = &[
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+];
+
+/// All env var names the AWS STS backend may consume at runtime.
+pub const CONSUMED_ENV_VARS: &[&str] = &[
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_PROFILE",
+    "AWS_SSO_SESSION",
+    "AWS_CONFIG_FILE",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "AWS_DEFAULT_REGION",
+    "AWS_REGION",
+];
+
 /// Check if AWS credentials are available.
 pub fn check_prerequisites(profile: &Option<String>) -> Option<String> {
     let has_env = (std::env::var("AWS_ACCESS_KEY_ID").is_ok()

@@ -8,6 +8,10 @@ use std::time::Duration;
 
 const URL: &str = "https://fnox.jdx.dev/leases/azure-token";
 
+/// All env var names the Azure Token backend may consume at runtime.
+pub const CONSUMED_ENV_VARS: &[&str] =
+    &["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"];
+
 pub fn check_prerequisites() -> Option<String> {
     let has_sp = std::env::var("AZURE_CLIENT_ID").is_ok()
         && std::env::var("AZURE_CLIENT_SECRET").is_ok()

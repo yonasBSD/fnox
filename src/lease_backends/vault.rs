@@ -7,6 +7,21 @@ use std::time::Duration;
 
 const URL: &str = "https://fnox.jdx.dev/leases/vault";
 
+/// All env var names the Vault backend may consume at runtime.
+pub const CONSUMED_ENV_VARS: &[&str] = &[
+    "VAULT_ADDR",
+    "FNOX_VAULT_ADDR",
+    "VAULT_TOKEN",
+    "FNOX_VAULT_TOKEN",
+    "VAULT_NAMESPACE",
+    "VAULT_CACERT",
+    "VAULT_CAPATH",
+    "VAULT_SKIP_VERIFY",
+    "VAULT_CLIENT_CERT",
+    "VAULT_CLIENT_KEY",
+    "VAULT_TLS_SERVER_NAME",
+];
+
 pub fn check_prerequisites(address: &Option<String>, token: &Option<String>) -> Option<String> {
     let has_addr = address.is_some()
         || std::env::var("VAULT_ADDR").is_ok()

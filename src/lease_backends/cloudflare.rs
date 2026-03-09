@@ -10,6 +10,9 @@ const API_BASE: &str = "https://api.cloudflare.com/client/v4";
 const MAX_TOKEN_NAME_LEN: usize = 100;
 const TOKEN_NAME_PREFIX: &str = "fnox-lease-";
 
+/// All env var names the Cloudflare backend may consume at runtime.
+pub const CONSUMED_ENV_VARS: &[&str] = &["CLOUDFLARE_API_TOKEN", "CF_API_TOKEN"];
+
 pub fn check_prerequisites() -> Option<String> {
     let has_token =
         std::env::var("CLOUDFLARE_API_TOKEN").is_ok() || std::env::var("CF_API_TOKEN").is_ok();

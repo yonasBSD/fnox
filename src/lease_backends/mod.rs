@@ -214,6 +214,35 @@ impl LeaseBackendConfig {
         }
     }
 
+    /// Zero-allocation check whether this backend produces the given env var key.
+    pub fn produces_env_var(&self, key: &str) -> bool {
+        match self {
+            LeaseBackendConfig::AwsSts { .. } => aws_sts::PRODUCED_ENV_VARS.contains(&key),
+            LeaseBackendConfig::GcpIam { env_var, .. } => env_var == key,
+            LeaseBackendConfig::Vault { env_map, .. } => env_map.values().any(|v| v == key),
+            LeaseBackendConfig::AzureToken { env_var, .. } => env_var == key,
+            LeaseBackendConfig::Command { .. } => false,
+            LeaseBackendConfig::Cloudflare { env_var, .. } => env_var == key,
+            LeaseBackendConfig::GithubApp { env_var, .. } => env_var == key,
+        }
+    }
+
+    /// All env var names this backend may consume at runtime, including aliases.
+    /// Used by `fnox get` to filter which profile secrets to resolve before
+    /// creating a lease. Each backend defines its own `CONSUMED_ENV_VARS` constant
+    /// covering both canonical names and runtime aliases.
+    pub fn consumed_env_vars(&self) -> &'static [&'static str] {
+        match self {
+            LeaseBackendConfig::AwsSts { .. } => aws_sts::CONSUMED_ENV_VARS,
+            LeaseBackendConfig::GcpIam { .. } => gcp_iam::CONSUMED_ENV_VARS,
+            LeaseBackendConfig::Vault { .. } => vault::CONSUMED_ENV_VARS,
+            LeaseBackendConfig::AzureToken { .. } => azure_token::CONSUMED_ENV_VARS,
+            LeaseBackendConfig::Command { .. } => command::CONSUMED_ENV_VARS,
+            LeaseBackendConfig::Cloudflare { .. } => cloudflare::CONSUMED_ENV_VARS,
+            LeaseBackendConfig::GithubApp { .. } => github_app::CONSUMED_ENV_VARS,
+        }
+    }
+
     /// Create a lease backend instance from this configuration
     pub fn create_backend(&self) -> Result<Box<dyn LeaseBackend>> {
         match self {
