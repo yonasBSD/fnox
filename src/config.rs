@@ -119,6 +119,10 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_auth: Option<bool>,
 
+    /// MCP server configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<McpConfig>,
+
     /// Track which config file each provider came from (not serialized)
     #[serde(skip)]
     pub provider_sources: HashMap<String, PathBuf>,
@@ -221,6 +225,60 @@ pub struct ProfileConfig {
     /// Track which config file the default_provider came from (not serialized)
     #[serde(skip)]
     pub default_provider_source: Option<PathBuf>,
+}
+
+/// Available MCP tools
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum McpTool {
+    GetSecret,
+    Exec,
+}
+
+impl McpTool {
+    /// Returns the tool name as it appears in MCP protocol
+    pub fn tool_name(&self) -> &'static str {
+        match self {
+            McpTool::GetSecret => "get_secret",
+            McpTool::Exec => "exec",
+        }
+    }
+}
+
+/// MCP server configuration
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[derive(Default)]
+pub struct McpConfig {
+    /// Which MCP tools to expose (default: ["get_secret", "exec"])
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "tools")]
+    tools_raw: Option<Vec<McpTool>>,
+
+    /// Timeout in seconds for exec tool subprocess (default: 300, minimum: 1)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
+    pub exec_timeout_secs: Option<u64>,
+}
+
+impl McpConfig {
+    fn default_tools() -> Vec<McpTool> {
+        vec![McpTool::GetSecret, McpTool::Exec]
+    }
+
+    /// Whether `tools` was explicitly set in the config file
+    pub fn tools_explicitly_set(&self) -> bool {
+        self.tools_raw.is_some()
+    }
+
+    /// Returns the effective tools list (default if not explicitly set)
+    pub fn tools(&self) -> Vec<McpTool> {
+        self.tools_raw.clone().unwrap_or_else(Self::default_tools)
+    }
+
+    /// Set the tools list explicitly
+    pub fn set_tools(&mut self, tools: Vec<McpTool>) {
+        self.tools_raw = Some(tools);
+    }
 }
 
 #[derive(
@@ -467,6 +525,18 @@ impl Config {
         // Merge prompt_auth (overlay takes precedence)
         if overlay.prompt_auth.is_some() {
             merged.prompt_auth = overlay.prompt_auth;
+        }
+
+        // Merge mcp (overlay takes precedence, field-by-field to avoid
+        // silently re-enabling tools when overlay only sets exec_timeout_secs)
+        if let Some(overlay_mcp) = overlay.mcp {
+            let base_mcp = merged.mcp.get_or_insert_with(McpConfig::default);
+            if overlay_mcp.tools_explicitly_set() {
+                base_mcp.set_tools(overlay_mcp.tools());
+            }
+            if overlay_mcp.exec_timeout_secs.is_some() {
+                base_mcp.exec_timeout_secs = overlay_mcp.exec_timeout_secs;
+            }
         }
 
         // Merge default_provider and its source (overlay takes precedence)
@@ -847,6 +917,7 @@ impl Config {
             age_key_file: None,
             if_missing: None,
             prompt_auth: None,
+            mcp: None,
             provider_sources: HashMap::new(),
             secret_sources: HashMap::new(),
             default_provider_source: None,
