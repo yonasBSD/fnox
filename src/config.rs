@@ -35,6 +35,17 @@ pub fn all_config_filenames(profile: Option<&str>) -> Vec<String> {
     files
 }
 
+/// Returns the local override filename for a supported config basename.
+///
+/// Only `fnox.toml` and `.fnox.toml` have corresponding local override files.
+pub fn local_override_filename(path: &Path) -> Option<&'static str> {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some("fnox.toml") => Some("fnox.local.toml"),
+        Some(".fnox.toml") => Some(".fnox.local.toml"),
+        _ => None,
+    }
+}
+
 /// Find the most appropriate existing config file in `dir` for writing.
 ///
 /// When a non-default profile is active, prefers the profile-specific file
@@ -1540,6 +1551,7 @@ fn default_true() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_empty_import_not_serialized() {
@@ -1609,6 +1621,30 @@ mod tests {
         assert!(
             !toml.contains("[profiles]\n"),
             "Should not have standalone [profiles] header"
+        );
+    }
+
+    #[test]
+    fn test_local_override_filename_matches_standard_config_names() {
+        assert_eq!(
+            local_override_filename(Path::new("nested/fnox.toml")),
+            Some("fnox.local.toml")
+        );
+        assert_eq!(
+            local_override_filename(Path::new("nested/.fnox.toml")),
+            Some(".fnox.local.toml")
+        );
+    }
+
+    #[test]
+    fn test_local_override_filename_rejects_non_standard_config_names() {
+        assert_eq!(
+            local_override_filename(Path::new("nested/custom.toml")),
+            None
+        );
+        assert_eq!(
+            local_override_filename(Path::new("nested/fnox.dev.toml")),
+            None
         );
     }
 
