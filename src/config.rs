@@ -275,6 +275,12 @@ pub struct McpConfig {
     /// stdout/stderr before returning to the agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redact_output: Option<bool>,
+
+    /// Optional allowlist of secret names visible to the MCP server.
+    /// When set, only these secrets are resolved and available via get_secret/exec.
+    /// When None, all profile secrets are available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secrets: Option<Vec<String>>,
 }
 
 impl McpConfig {
@@ -300,6 +306,25 @@ impl McpConfig {
     /// Whether exec output redaction is enabled (default: true)
     pub fn redact_output(&self) -> bool {
         self.redact_output.unwrap_or(true)
+    }
+
+    /// Filter a secrets map to only include allowed secrets.
+    /// Returns the map unchanged if no allowlist is set.
+    pub fn filter_secrets(
+        &self,
+        secrets: IndexMap<String, SecretConfig>,
+    ) -> IndexMap<String, SecretConfig> {
+        match &self.secrets {
+            None => secrets,
+            Some(allowlist) => {
+                let allowed: std::collections::HashSet<&str> =
+                    allowlist.iter().map(|s| s.as_str()).collect();
+                secrets
+                    .into_iter()
+                    .filter(|(k, _)| allowed.contains(k.as_str()))
+                    .collect()
+            }
+        }
     }
 }
 
@@ -561,6 +586,11 @@ impl Config {
             }
             if overlay_mcp.redact_output.is_some() {
                 base_mcp.redact_output = overlay_mcp.redact_output;
+            }
+            // Replace entirely — a partial overlay should not silently
+            // re-expose secrets that the base config restricted.
+            if overlay_mcp.secrets.is_some() {
+                base_mcp.secrets = overlay_mcp.secrets;
             }
         }
 
@@ -1837,5 +1867,99 @@ mod tests {
         std::fs::write(dir.path().join("fnox.local.toml"), "").unwrap();
         let result = super::find_local_config(dir.path(), None);
         assert_eq!(result, dir.path().join("fnox.local.toml"));
+    }
+
+    #[test]
+    fn filter_secrets_none_allowlist_returns_all() {
+        let cfg = McpConfig::default(); // secrets: None
+        let mut m = IndexMap::new();
+        m.insert("A".to_string(), SecretConfig::new());
+        m.insert("B".to_string(), SecretConfig::new());
+        let result = cfg.filter_secrets(m.clone());
+        assert_eq!(
+            result.keys().collect::<Vec<_>>(),
+            m.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn filter_secrets_empty_allowlist_returns_empty() {
+        let cfg = McpConfig {
+            secrets: Some(vec![]),
+            ..Default::default()
+        };
+        let mut m = IndexMap::new();
+        m.insert("A".to_string(), SecretConfig::new());
+        assert!(cfg.filter_secrets(m).is_empty());
+    }
+
+    #[test]
+    fn filter_secrets_subset() {
+        let cfg = McpConfig {
+            secrets: Some(vec!["A".into()]),
+            ..Default::default()
+        };
+        let mut m = IndexMap::new();
+        m.insert("A".to_string(), SecretConfig::new());
+        m.insert("B".to_string(), SecretConfig::new());
+        let result = cfg.filter_secrets(m);
+        assert!(result.contains_key("A"));
+        assert!(!result.contains_key("B"));
+    }
+
+    #[test]
+    fn filter_secrets_unknown_allowlist_entry_ignored() {
+        let cfg = McpConfig {
+            secrets: Some(vec!["A".into(), "NONEXISTENT".into()]),
+            ..Default::default()
+        };
+        let mut m = IndexMap::new();
+        m.insert("A".to_string(), SecretConfig::new());
+        let result = cfg.filter_secrets(m);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("A"));
+    }
+
+    #[test]
+    fn mcp_secrets_overlay_replaces_base_not_appends() {
+        let base = Config {
+            mcp: Some(McpConfig {
+                secrets: Some(vec!["A".into()]),
+                ..Default::default()
+            }),
+            ..Config::new()
+        };
+        let overlay = Config {
+            mcp: Some(McpConfig {
+                secrets: Some(vec!["B".into()]),
+                ..Default::default()
+            }),
+            ..Config::new()
+        };
+        let merged = Config::merge_configs(base, overlay).unwrap();
+        assert_eq!(
+            merged.mcp.unwrap().secrets,
+            Some(vec!["B".into()]),
+            "overlay must replace, not append, the base allowlist"
+        );
+    }
+
+    #[test]
+    fn mcp_secrets_overlay_without_secrets_preserves_base() {
+        let base = Config {
+            mcp: Some(McpConfig {
+                secrets: Some(vec!["A".into()]),
+                ..Default::default()
+            }),
+            ..Config::new()
+        };
+        let overlay = Config {
+            mcp: Some(McpConfig {
+                ..Default::default()
+            }),
+            ..Config::new()
+        };
+        let merged = Config::merge_configs(base, overlay).unwrap();
+        assert_eq!(merged.mcp.unwrap().secrets, Some(vec!["A".into()]));
     }
 }
