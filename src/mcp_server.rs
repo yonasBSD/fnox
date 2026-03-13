@@ -417,12 +417,25 @@ impl FnoxMcpServer {
         let truncated = stdout_truncated || stderr_truncated || total_collected > MAX_OUTPUT_BYTES;
 
         let display_limit = PER_STREAM_LIMIT - 1;
-        let stdout = String::from_utf8_lossy(&stdout_buf[..stdout_buf.len().min(display_limit)]);
-        let stderr = String::from_utf8_lossy(&stderr_buf[..stderr_buf.len().min(display_limit)]);
+        let stdout_raw =
+            String::from_utf8_lossy(&stdout_buf[..stdout_buf.len().min(display_limit)]);
+        let stderr_raw =
+            String::from_utf8_lossy(&stderr_buf[..stderr_buf.len().min(display_limit)]);
+
+        // Redact secret values from output to prevent exfiltration via
+        // commands like `printenv` or `echo $SECRET`.
+        let (stdout, stderr) = if self.mcp_config.redact_output() {
+            (
+                redact_secrets(&stdout_raw, &env_vars)?,
+                redact_secrets(&stderr_raw, &env_vars)?,
+            )
+        } else {
+            (stdout_raw.to_string(), stderr_raw.to_string())
+        };
 
         let mut parts = Vec::new();
         if !stdout.is_empty() {
-            parts.push(stdout.to_string());
+            parts.push(stdout);
         }
         if !stderr.is_empty() {
             parts.push(format!("[stderr]\n{stderr}"));
@@ -452,6 +465,46 @@ impl FnoxMcpServer {
             Ok(CallToolResult::error(vec![Content::text(text)]))
         }
     }
+}
+
+/// Minimum secret length for redaction. Secrets shorter than this are skipped
+/// to avoid false-positive redaction that corrupts output readability.
+const MIN_REDACT_LENGTH: usize = 3;
+
+/// Replace all occurrences of secret values in `text` with `[REDACTED]`.
+///
+/// Uses Aho-Corasick with leftmost-longest matching for single-pass replacement,
+/// avoiding issues with sequential replacement (e.g., a short secret matching
+/// inside an already-placed `[REDACTED]` marker).
+///
+/// Secrets shorter than `MIN_REDACT_LENGTH` or that are empty/whitespace-only
+/// are skipped to avoid false positives. Values are trimmed before matching
+/// so that trailing newlines (common when secrets are loaded from files) don't
+/// prevent redaction of the core value in output.
+fn redact_secrets(text: &str, secret_values: &[(String, String)]) -> Result<String, McpError> {
+    let values: Vec<&str> = secret_values
+        .iter()
+        .map(|(_, v)| v.trim())
+        .filter(|v| !v.is_empty() && v.len() >= MIN_REDACT_LENGTH)
+        .collect();
+
+    if values.is_empty() {
+        return Ok(text.to_string());
+    }
+
+    let ac = aho_corasick::AhoCorasick::builder()
+        .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+        .build(&values)
+        .map_err(|e| {
+            McpError::internal_error(
+                format!(
+                    "Failed to build redaction filter: {e}. Refusing to return unredacted output."
+                ),
+                None,
+            )
+        })?;
+
+    Ok(ac.replace_all(text, &vec!["[REDACTED]"; values.len()]))
 }
 
 /// Manually implement ServerHandler instead of using #[tool_handler] so we can
@@ -528,5 +581,73 @@ impl ServerHandler for FnoxMcpServer {
         }
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         self.tool_router.call(tcc).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redact_replaces_secret_values() {
+        let secrets = vec![
+            ("API_KEY".into(), "sk-abc123".into()),
+            ("DB_PASS".into(), "hunter2".into()),
+        ];
+        let input = "API_KEY=sk-abc123\nDB_PASS=hunter2\nOK=public";
+        let result = redact_secrets(input, &secrets).unwrap();
+        assert_eq!(result, "API_KEY=[REDACTED]\nDB_PASS=[REDACTED]\nOK=public");
+    }
+
+    #[test]
+    fn redact_longest_match_wins() {
+        let secrets = vec![
+            ("SHORT".into(), "abc".into()),
+            ("LONG".into(), "abcdef".into()),
+        ];
+        let input = "value is abcdef";
+        let result = redact_secrets(input, &secrets).unwrap();
+        assert_eq!(result, "value is [REDACTED]");
+    }
+
+    #[test]
+    fn redact_skips_empty_and_short_secrets() {
+        let secrets = vec![
+            ("EMPTY".into(), "".into()),
+            ("SPACES".into(), "   ".into()),
+            ("SHORT".into(), "ab".into()),
+            ("REAL".into(), "secret".into()),
+        ];
+        let input = "the secret has ab in it";
+        let result = redact_secrets(input, &secrets).unwrap();
+        assert_eq!(result, "the [REDACTED] has ab in it");
+    }
+
+    #[test]
+    fn redact_no_secrets_returns_unchanged() {
+        let input = "nothing to redact here";
+        let result = redact_secrets(input, &[]).unwrap();
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn redact_multiple_occurrences() {
+        let secrets = vec![("TOKEN".into(), "xyz789".into())];
+        let input = "xyz789 and xyz789 again";
+        let result = redact_secrets(input, &secrets).unwrap();
+        assert_eq!(result, "[REDACTED] and [REDACTED] again");
+    }
+
+    #[test]
+    fn redact_does_not_corrupt_markers() {
+        // A secret that is a substring of "[REDACTED]" should not corrupt
+        // already-placed markers (aho-corasick does single-pass replacement).
+        let secrets = vec![
+            ("LONG".into(), "sk-abc123".into()),
+            ("OVERLAP".into(), "DACT".into()),
+        ];
+        let input = "sk-abc123 key";
+        let result = redact_secrets(input, &secrets).unwrap();
+        assert_eq!(result, "[REDACTED] key");
     }
 }
