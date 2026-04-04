@@ -918,6 +918,29 @@
             "auth_command": {
               "type": ["string", "null"]
             },
+            "config": {
+              "$ref": "#/$defs/OptionStringOrSecretRef"
+            },
+            "project": {
+              "$ref": "#/$defs/OptionStringOrSecretRef"
+            },
+            "token": {
+              "$ref": "#/$defs/OptionStringOrSecretRef"
+            },
+            "type": {
+              "type": "string",
+              "const": "doppler"
+            }
+          },
+          "additionalProperties": false,
+          "required": ["type"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "auth_command": {
+              "type": ["string", "null"]
+            },
             "prefix": {
               "$ref": "#/$defs/OptionStringOrSecretRef"
             },
