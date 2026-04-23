@@ -463,12 +463,11 @@ impl App {
                     self.popup = Popup::ConfirmDelete(key.clone());
                 }
             }
-            KeyCode::Char('e') => {
+            KeyCode::Char('e')
                 // Edit selected secret value
-                if self.focus == Focus::Secrets {
+                if self.focus == Focus::Secrets => {
                     self.open_edit_secret();
                 }
-            }
             KeyCode::Char('s') => {
                 // Set/create a new secret
                 self.popup = Popup::SetSecret(SetState {
@@ -636,16 +635,12 @@ impl App {
                 self.resolved_values.insert(key.clone(), Some(value));
                 self.status_message = Some(format!("Updated {} (in memory only)", key));
             }
-            KeyCode::Backspace => {
-                if state.cursor > 0 {
-                    Self::remove_char_at(&mut state.value, state.cursor - 1);
-                    state.cursor -= 1;
-                }
+            KeyCode::Backspace if state.cursor > 0 => {
+                Self::remove_char_at(&mut state.value, state.cursor - 1);
+                state.cursor -= 1;
             }
-            KeyCode::Delete => {
-                if state.cursor < state.value.chars().count() {
-                    Self::remove_char_at(&mut state.value, state.cursor);
-                }
+            KeyCode::Delete if state.cursor < state.value.chars().count() => {
+                Self::remove_char_at(&mut state.value, state.cursor);
             }
             KeyCode::Left => {
                 state.cursor = state.cursor.saturating_sub(1);
@@ -714,15 +709,13 @@ impl App {
                 self.resolved_values.insert(key.clone(), Some(value));
                 self.status_message = Some(format!("Set {} (in memory only)", key));
             }
-            KeyCode::Backspace => {
-                if state.cursor > 0 {
-                    let field = match state.field {
-                        SetField::Key => &mut state.key,
-                        SetField::Value => &mut state.value,
-                    };
-                    Self::remove_char_at(field, state.cursor - 1);
-                    state.cursor -= 1;
-                }
+            KeyCode::Backspace if state.cursor > 0 => {
+                let field = match state.field {
+                    SetField::Key => &mut state.key,
+                    SetField::Value => &mut state.value,
+                };
+                Self::remove_char_at(field, state.cursor - 1);
+                state.cursor -= 1;
             }
             KeyCode::Delete => {
                 let field = match state.field {
@@ -768,19 +761,15 @@ impl App {
                 }
                 self.popup = Popup::None;
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if !self.available_profiles.is_empty() {
-                    self.profile_picker_index =
-                        (self.profile_picker_index + 1) % self.available_profiles.len();
-                }
+            KeyCode::Down | KeyCode::Char('j') if !self.available_profiles.is_empty() => {
+                self.profile_picker_index =
+                    (self.profile_picker_index + 1) % self.available_profiles.len();
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if !self.available_profiles.is_empty() {
-                    self.profile_picker_index = self
-                        .profile_picker_index
-                        .checked_sub(1)
-                        .unwrap_or(self.available_profiles.len() - 1);
-                }
+            KeyCode::Up | KeyCode::Char('k') if !self.available_profiles.is_empty() => {
+                self.profile_picker_index = self
+                    .profile_picker_index
+                    .checked_sub(1)
+                    .unwrap_or(self.available_profiles.len() - 1);
             }
             _ => {}
         }
