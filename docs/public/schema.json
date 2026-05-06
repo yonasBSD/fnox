@@ -340,6 +340,57 @@
           "required": ["type", "app_id", "installation_id"]
         },
         {
+          "description": "GitHub App User Access Token via OAuth Device Flow",
+          "type": "object",
+          "properties": {
+            "api_base": {
+              "description": "GitHub API base URL (default: https://api.github.com)",
+              "type": "string",
+              "default": "https://api.github.com"
+            },
+            "auth_base": {
+              "description": "OAuth token endpoint base URL (default: https://github.com/login/oauth)",
+              "type": "string",
+              "default": "https://github.com/login/oauth"
+            },
+            "client_id": {
+              "type": "string"
+            },
+            "duration": {
+              "type": ["string", "null"]
+            },
+            "env_var": {
+              "type": "string",
+              "default": "GITHUB_TOKEN"
+            },
+            "keyring_cache": {
+              "description": "Disable to force device flow on each lease creation.",
+              "type": "boolean",
+              "default": true
+            },
+            "keyring_service": {
+              "description": "OS keyring service used to cache access/refresh tokens.",
+              "type": "string",
+              "default": "fnox-github-oauth"
+            },
+            "open_browser": {
+              "description": "Open the verification URL in a browser when possible.",
+              "type": "boolean",
+              "default": true
+            },
+            "scope": {
+              "description": "OAuth scope string requested from GitHub.",
+              "type": "string",
+              "default": "repo read:org workflow"
+            },
+            "type": {
+              "type": "string",
+              "const": "github-oauth"
+            }
+          },
+          "required": ["type", "client_id"]
+        },
+        {
           "description": "Generic Command Backend",
           "type": "object",
           "properties": {
