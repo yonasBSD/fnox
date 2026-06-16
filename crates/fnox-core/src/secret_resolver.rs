@@ -8,6 +8,7 @@ use crate::source_registry;
 use crate::suggest::{find_similar, format_suggestions};
 use indexmap::IndexMap;
 use miette::SourceSpan;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 /// Extract a value from JSON using dot notation (e.g., "nested.path")
@@ -101,6 +102,161 @@ fn apply_post_processing(value: String, secret_config: &SecretConfig) -> Result<
         return extract_line(&value, line);
     }
     Ok(value)
+}
+
+fn extract_default_references(default: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    let mut rest = default;
+
+    while let Some(start) = rest.find("${") {
+        let after_start = &rest[start + 2..];
+        let Some(end) = after_start.find('}') else {
+            break;
+        };
+
+        let name = &after_start[..end];
+        if !name.is_empty() && !refs.iter().any(|existing| existing == name) {
+            refs.push(name.to_string());
+        }
+        rest = &after_start[end + 1..];
+    }
+
+    refs
+}
+
+fn has_default_interpolation(default: &str) -> bool {
+    default.contains("${")
+}
+
+fn render_default_template(
+    key: &str,
+    default: &str,
+    resolved: &HashMap<String, Option<String>>,
+) -> Result<String> {
+    let mut rendered = String::with_capacity(default.len());
+    let mut rest = default;
+
+    while let Some(start) = rest.find("${") {
+        rendered.push_str(&rest[..start]);
+        let after_start = &rest[start + 2..];
+        let Some(end) = after_start.find('}') else {
+            rendered.push_str(&rest[start..]);
+            return Ok(rendered);
+        };
+
+        let name = &after_start[..end];
+        if name.is_empty() {
+            return Err(FnoxError::Config(format!(
+                "Secret '{}' has an empty interpolation reference in default value",
+                key
+            )));
+        }
+
+        let value = resolved.get(name).ok_or_else(|| {
+            FnoxError::Config(format!(
+                "Secret '{}' references '{}' in default value, but '{}' did not resolve",
+                key, name, name
+            ))
+        })?;
+        if let Some(value) = value {
+            rendered.push_str(value);
+        }
+        rest = &after_start[end + 1..];
+    }
+
+    rendered.push_str(rest);
+    Ok(rendered)
+}
+
+fn default_reference_error(key: &str, reference: &str) -> FnoxError {
+    FnoxError::Config(format!(
+        "Secret '{}' references undefined secret '{}' in default value",
+        key, reference
+    ))
+}
+
+fn default_can_be_used_in_batch(
+    config: &Config,
+    profile: &str,
+    secret_config: &SecretConfig,
+) -> bool {
+    if secret_config.sync.is_some() {
+        return false;
+    }
+
+    if secret_config.value().is_none() {
+        return true;
+    }
+
+    secret_config.provider().is_none()
+        && !matches!(config.get_default_provider(profile), Ok(Some(_)))
+}
+
+fn collect_interpolation_closure(
+    config: &Config,
+    profile: &str,
+    key: &str,
+    secrets: &IndexMap<String, SecretConfig>,
+) -> Result<IndexMap<String, SecretConfig>> {
+    struct ClosureCollector<'a> {
+        config: &'a Config,
+        profile: &'a str,
+        root_key: &'a str,
+        secrets: &'a IndexMap<String, SecretConfig>,
+        visiting: HashSet<String>,
+        visited: HashSet<String>,
+        subset: IndexMap<String, SecretConfig>,
+    }
+
+    impl ClosureCollector<'_> {
+        fn visit(&mut self, key: &str) -> Result<()> {
+            if self.visited.contains(key) {
+                return Ok(());
+            }
+            if !self.visiting.insert(key.to_string()) {
+                return Err(FnoxError::Config(format!(
+                    "Interpolation dependency cycle among secrets: {}",
+                    key
+                )));
+            }
+
+            let secret_config = self.secrets.get(key).ok_or_else(|| {
+                FnoxError::Config(format!(
+                    "Secret '{}' is not defined in the active profile",
+                    key
+                ))
+            })?;
+
+            if (key == self.root_key
+                || default_can_be_used_in_batch(self.config, self.profile, secret_config))
+                && let Some(default) = &secret_config.default
+            {
+                for reference in extract_default_references(default) {
+                    if !self.secrets.contains_key(&reference) {
+                        return Err(default_reference_error(key, &reference));
+                    }
+                    self.visit(&reference)?;
+                }
+            }
+
+            self.visiting.remove(key);
+            self.visited.insert(key.to_string());
+            self.subset.insert(key.to_string(), secret_config.clone());
+            Ok(())
+        }
+    }
+
+    let mut collector = ClosureCollector {
+        config,
+        profile,
+        root_key: key,
+        secrets,
+        visiting: HashSet::new(),
+        visited: HashSet::new(),
+        subset: IndexMap::new(),
+    };
+    collector.visit(key)?;
+    Ok(collector.subset)
 }
 
 /// Creates a ProviderNotConfigured error, using source spans when available for better error display.
@@ -229,6 +385,31 @@ pub fn handle_provider_error(
 /// The raw `value` field is NEVER used directly - it's only used as input to providers.
 /// Post-processing (e.g., JSON path extraction) is applied to all sources consistently.
 pub async fn resolve_secret(
+    config: &Config,
+    profile: &str,
+    key: &str,
+    secret_config: &SecretConfig,
+) -> Result<Option<String>> {
+    if let Some(default) = &secret_config.default
+        && has_default_interpolation(default)
+    {
+        let secrets = config.get_secrets(profile)?;
+        if secrets.contains_key(key) {
+            let subset = collect_interpolation_closure(config, profile, key, &secrets)?;
+            let mut resolved = resolve_secrets_batch(config, profile, &subset).await?;
+            if let Some(Some(value)) = resolved.shift_remove(key) {
+                return Ok(Some(value));
+            }
+            let resolved_context: HashMap<String, Option<String>> = resolved.into_iter().collect();
+            let default = render_default_template(key, default, &resolved_context)?;
+            return Ok(Some(apply_post_processing(default, secret_config)?));
+        }
+    }
+
+    resolve_secret_raw(config, profile, key, secret_config).await
+}
+
+async fn resolve_secret_raw(
     config: &Config,
     profile: &str,
     key: &str,
@@ -411,6 +592,9 @@ pub async fn resolve_secrets_batch(
     let mut no_provider = Vec::new();
 
     let providers = config.get_providers(profile);
+    let all_keys: Vec<String> = secrets.keys().cloned().collect();
+    let secret_keys: HashSet<&str> = all_keys.iter().map(|k| k.as_str()).collect();
+    let mut default_deps: HashMap<String, Vec<String>> = HashMap::new();
 
     for (key, secret_config) in secrets {
         // If a sync cache exists, use the sync provider/value
@@ -435,22 +619,61 @@ pub async fn resolve_secrets_batch(
         }
     }
 
-    // Build dependency graph and compute resolution levels using Kahn's algorithm.
-    let env_deps_for_secret: HashMap<String, &[&str]> = secret_provider
-        .iter()
-        .map(|(key, (provider_name, _))| {
-            let deps = providers
-                .get(provider_name)
-                .map(|pc| pc.env_dependencies())
-                .unwrap_or(&[]);
-            (key.clone(), deps)
-        })
-        .collect();
+    for key in &no_provider {
+        let secret_config = &secrets[key];
+        let Some(default) = &secret_config.default else {
+            continue;
+        };
 
-    let all_keys: Vec<String> = secrets.keys().cloned().collect();
+        let refs = extract_default_references(default);
+        if refs.iter().any(|reference| reference == key) {
+            return Err(FnoxError::Config(format!(
+                "Secret '{}' has an interpolation cycle in default value",
+                key
+            )));
+        }
+
+        for reference in &refs {
+            if !secret_keys.contains(reference.as_str()) {
+                return Err(default_reference_error(key, reference));
+            }
+        }
+
+        if !refs.is_empty() {
+            default_deps.insert(key.clone(), refs);
+        }
+    }
+
+    // Build dependency graph and compute resolution levels using Kahn's algorithm.
+    let mut deps_for_secret: HashMap<String, Vec<String>> = HashMap::new();
+    for (key, (provider_name, _)) in &secret_provider {
+        let deps = providers
+            .get(provider_name)
+            .map(|pc| pc.env_dependencies())
+            .unwrap_or(&[]);
+        deps_for_secret.insert(
+            key.clone(),
+            deps.iter().map(|dep| dep.to_string()).collect(),
+        );
+    }
+    for (key, refs) in &default_deps {
+        match deps_for_secret.entry(key.clone()) {
+            Entry::Occupied(mut entry) => {
+                let deps = entry.get_mut();
+                for reference in refs {
+                    if !deps.iter().any(|dep| dep == reference) {
+                        deps.push(reference.clone());
+                    }
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(refs.clone());
+            }
+        }
+    }
+
     let no_provider_set: HashSet<&str> = no_provider.iter().map(|s| s.as_str()).collect();
-    let (levels, cycle) =
-        compute_resolution_levels(&all_keys, &env_deps_for_secret, &no_provider_set);
+    let (levels, cycle) = compute_resolution_levels(&all_keys, &deps_for_secret, &no_provider_set);
 
     // Resolve each level in order
     let mut temp_results: HashMap<String, Option<String>> = HashMap::new();
@@ -463,6 +686,7 @@ pub async fn resolve_secrets_batch(
             &secret_provider,
             &no_provider,
             ready,
+            &temp_results,
         )
         .await?;
 
@@ -478,6 +702,22 @@ pub async fn resolve_secrets_batch(
 
     // Handle any remaining secrets (cycles) - resolve best-effort
     if !cycle.is_empty() {
+        let cycle_keys: HashSet<&str> = cycle.iter().map(|key| key.as_str()).collect();
+        let has_default_cycle = cycle.iter().any(|key| {
+            default_deps.get(key).is_some_and(|refs| {
+                refs.iter()
+                    .any(|reference| cycle_keys.contains(reference.as_str()))
+            })
+        });
+        if has_default_cycle {
+            let mut sorted_cycle = cycle.clone();
+            sorted_cycle.sort();
+            return Err(FnoxError::Config(format!(
+                "Interpolation dependency cycle among secrets: {}",
+                sorted_cycle.join(", ")
+            )));
+        }
+
         tracing::warn!(
             "Detected dependency cycle among secrets: {}. Resolving best-effort.",
             cycle.join(", ")
@@ -489,6 +729,7 @@ pub async fn resolve_secrets_batch(
             &secret_provider,
             &no_provider,
             &cycle,
+            &temp_results,
         )
         .await?;
         temp_results.extend(level_results);
@@ -515,20 +756,20 @@ pub async fn resolve_secrets_batch(
 /// (via `env_dependencies()`) that matches D's key name.
 fn compute_resolution_levels(
     all_keys: &[String],
-    env_deps_for_secret: &HashMap<String, &[&str]>,
+    deps_for_secret: &HashMap<String, Vec<String>>,
     no_provider: &HashSet<&str>,
 ) -> (Vec<Vec<String>>, Vec<String>) {
     let secret_keys: HashSet<&str> = all_keys.iter().map(|k| k.as_str()).collect();
     let mut in_degree: HashMap<String, usize> = HashMap::new();
     let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
 
-    for (key, deps) in env_deps_for_secret {
+    for (key, deps) in deps_for_secret {
         let mut degree = 0usize;
-        for dep_env in *deps {
-            if secret_keys.contains(dep_env) && *dep_env != key.as_str() {
+        for dep_env in deps {
+            if secret_keys.contains(dep_env.as_str()) && dep_env != key {
                 degree += 1;
                 dependents
-                    .entry(dep_env.to_string())
+                    .entry(dep_env.clone())
                     .or_default()
                     .push(key.clone());
             }
@@ -536,10 +777,10 @@ fn compute_resolution_levels(
         in_degree.insert(key.clone(), degree);
     }
 
-    // No-provider secrets always have in_degree 0
+    // No-provider secrets without dependency entries start at in_degree 0.
     for key in all_keys {
         if no_provider.contains(key.as_str()) {
-            in_degree.insert(key.clone(), 0);
+            in_degree.entry(key.clone()).or_insert(0);
         }
     }
 
@@ -587,6 +828,7 @@ async fn resolve_level(
     secret_provider: &HashMap<String, (String, String)>,
     no_provider: &[String],
     ready: &[String],
+    resolved_so_far: &HashMap<String, Option<String>>,
 ) -> Result<HashMap<String, Option<String>>> {
     use futures::stream::{self, StreamExt};
 
@@ -624,7 +866,9 @@ async fn resolve_level(
     let no_provider_results: Vec<Result<_>> = stream::iter(level_no_provider)
         .map(|key| async move {
             let secret_config = &secrets[&key];
-            let value = resolve_secret(config, profile, &key, secret_config).await?;
+            let value =
+                resolve_no_provider_secret(config, profile, &key, secret_config, resolved_so_far)
+                    .await?;
             Ok((key, value))
         })
         .buffer_unordered(10)
@@ -637,6 +881,26 @@ async fn resolve_level(
     }
 
     Ok(temp_results)
+}
+
+async fn resolve_no_provider_secret(
+    config: &Config,
+    profile: &str,
+    key: &str,
+    secret_config: &SecretConfig,
+    resolved_so_far: &HashMap<String, Option<String>>,
+) -> Result<Option<String>> {
+    if let Some(default) = &secret_config.default {
+        tracing::debug!("Using default value for secret '{}'", key);
+        let value = if has_default_interpolation(default) {
+            render_default_template(key, default, resolved_so_far)?
+        } else {
+            default.clone()
+        };
+        return Ok(Some(apply_post_processing(value, secret_config)?));
+    }
+
+    resolve_secret_raw(config, profile, key, secret_config).await
 }
 
 /// Resolve all secrets for a single provider using batch operations
@@ -881,6 +1145,7 @@ fn process_batch_results(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ProfileConfig;
 
     /// Helper to call compute_resolution_levels and sort each level for deterministic assertions.
     fn compute_sorted(
@@ -889,8 +1154,10 @@ mod tests {
         no_provider: &[&str],
     ) -> (Vec<Vec<String>>, Vec<String>) {
         let all: Vec<String> = all_keys.iter().map(|s| s.to_string()).collect();
-        let deps: HashMap<String, &[&str]> =
-            env_deps.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        let deps: HashMap<String, Vec<String>> = env_deps
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.iter().map(|dep| dep.to_string()).collect()))
+            .collect();
         let np: HashSet<&str> = no_provider.iter().copied().collect();
         let (mut levels, mut cycle) = compute_resolution_levels(&all, &deps, &np);
         for level in &mut levels {
@@ -898,6 +1165,19 @@ mod tests {
         }
         cycle.sort();
         (levels, cycle)
+    }
+
+    fn default_secret(value: &str) -> SecretConfig {
+        let mut secret = SecretConfig::new();
+        secret.default = Some(value.to_string());
+        secret
+    }
+
+    fn plain_provider_secret(value: &str) -> SecretConfig {
+        let mut secret = SecretConfig::new();
+        secret.set_provider(Some("plain".to_string()));
+        secret.set_value(Some(value.to_string()));
+        secret
     }
 
     #[test]
@@ -1025,6 +1305,289 @@ mod tests {
         assert_eq!(levels[0], vec!["OP_SERVICE_ACCOUNT_TOKEN", "PLAIN_VAR"]);
         // Level 1: 1Password secrets that depend on the token
         assert_eq!(levels[1], vec!["DB_PASSWORD", "TUNNEL_TOKEN"]);
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_resolves_independent_of_order() {
+        let config = Config::new();
+        let mut secrets = IndexMap::new();
+        secrets.insert(
+            "DATABASE_URL".to_string(),
+            default_secret("postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"),
+        );
+        secrets.insert("POSTGRES_PASSWORD".to_string(), default_secret("secret"));
+        secrets.insert("POSTGRES_USER".to_string(), default_secret("app"));
+        secrets.insert("POSTGRES_DB".to_string(), default_secret("fnox"));
+        secrets.insert("POSTGRES_HOST".to_string(), default_secret("localhost"));
+        secrets.insert("POSTGRES_PORT".to_string(), default_secret("5432"));
+
+        let resolved = resolve_secrets_batch(&config, "default", &secrets)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            resolved
+                .get("DATABASE_URL")
+                .and_then(|value| value.as_ref()),
+            Some(&"postgres://app:secret@localhost:5432/fnox".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_uses_profile_overrides() {
+        let mut config = Config::new();
+        config.secrets.insert(
+            "DATABASE_URL".to_string(),
+            default_secret("postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db/fnox"),
+        );
+        config
+            .secrets
+            .insert("POSTGRES_USER".to_string(), default_secret("base"));
+        config.secrets.insert(
+            "POSTGRES_PASSWORD".to_string(),
+            default_secret("base-password"),
+        );
+
+        let mut dev = ProfileConfig::new();
+        dev.secrets
+            .insert("POSTGRES_USER".to_string(), default_secret("dev"));
+        dev.secrets.insert(
+            "POSTGRES_PASSWORD".to_string(),
+            default_secret("dev-password"),
+        );
+        let mut secrets = config.secrets.clone();
+        secrets.extend(dev.secrets.clone());
+        config.profiles.insert("dev".to_string(), dev);
+
+        let resolved = resolve_secrets_batch(&config, "dev", &secrets)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            resolved
+                .get("DATABASE_URL")
+                .and_then(|value| value.as_ref()),
+            Some(&"postgres://dev:dev-password@db/fnox".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_errors_for_missing_reference() {
+        let config = Config::new();
+        let mut secrets = IndexMap::new();
+        secrets.insert(
+            "DATABASE_URL".to_string(),
+            default_secret("postgres://${POSTGRES_USER}@localhost/fnox"),
+        );
+
+        let err = resolve_secrets_batch(&config, "default", &secrets)
+            .await
+            .unwrap_err();
+        let msg = format!("{err}");
+
+        assert!(
+            msg.contains("undefined secret 'POSTGRES_USER'"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_errors_for_cycle() {
+        let config = Config::new();
+        let mut secrets = IndexMap::new();
+        secrets.insert("A".to_string(), default_secret("${B}"));
+        secrets.insert("B".to_string(), default_secret("${A}"));
+
+        let err = resolve_secrets_batch(&config, "default", &secrets)
+            .await
+            .unwrap_err();
+        let msg = format!("{err}");
+
+        assert!(
+            msg.contains("Interpolation dependency cycle"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_can_use_provider_backed_reference() {
+        let mut config = Config::new();
+        config.providers.insert(
+            "plain".to_string(),
+            ProviderConfig::Plain { auth_command: None },
+        );
+
+        let mut secrets = IndexMap::new();
+        secrets.insert("POSTGRES_USER".to_string(), plain_provider_secret("app"));
+        secrets.insert(
+            "DATABASE_URL".to_string(),
+            default_secret("postgres://${POSTGRES_USER}@localhost/fnox"),
+        );
+
+        let resolved = resolve_secrets_batch(&config, "default", &secrets)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            resolved
+                .get("DATABASE_URL")
+                .and_then(|value| value.as_ref()),
+            Some(&"postgres://app@localhost/fnox".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_provider_value_wins_over_interpolated_default() {
+        let mut config = Config::new();
+        config.providers.insert(
+            "plain".to_string(),
+            ProviderConfig::Plain { auth_command: None },
+        );
+
+        let mut secret = plain_provider_secret("provider-value");
+        secret.default = Some("${MISSING_REF}".to_string());
+
+        let mut secrets = IndexMap::new();
+        secrets.insert("API_KEY".to_string(), secret);
+
+        let resolved = resolve_secrets_batch(&config, "default", &secrets)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            resolved.get("API_KEY").and_then(|value| value.as_ref()),
+            Some(&"provider-value".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_errors_for_empty_reference() {
+        let config = Config::new();
+        let mut secrets = IndexMap::new();
+        secrets.insert("DATABASE_URL".to_string(), default_secret("${}"));
+
+        let err = resolve_secrets_batch(&config, "default", &secrets)
+            .await
+            .unwrap_err();
+        let msg = format!("{err}");
+
+        assert!(
+            msg.contains("empty interpolation reference"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_interpolated_default_renders_missing_allowed_reference_as_empty() {
+        let config = Config::new();
+        let mut secrets = IndexMap::new();
+        let mut user = SecretConfig::new();
+        user.if_missing = Some(IfMissing::Ignore);
+        secrets.insert("FNOX_TEST_MISSING_OPTIONAL_REF".to_string(), user);
+        secrets.insert(
+            "DATABASE_URL".to_string(),
+            default_secret("postgres://${FNOX_TEST_MISSING_OPTIONAL_REF}@localhost/fnox"),
+        );
+
+        let resolved = resolve_secrets_batch(&config, "default", &secrets)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            resolved
+                .get("DATABASE_URL")
+                .and_then(|value| value.as_ref()),
+            Some(&"postgres://@localhost/fnox".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_secret_resolves_interpolated_default() {
+        let mut config = Config::new();
+        config.secrets.insert(
+            "DATABASE_URL".to_string(),
+            default_secret("postgres://${POSTGRES_USER}@localhost/fnox"),
+        );
+        config
+            .secrets
+            .insert("POSTGRES_USER".to_string(), default_secret("app"));
+
+        let secret_config = config.secrets.get("DATABASE_URL").unwrap();
+        let resolved = resolve_secret(&config, "default", "DATABASE_URL", secret_config)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, Some("postgres://app@localhost/fnox".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_secret_closure_includes_chained_defaults_without_default_provider() {
+        let mut config = Config::new();
+        config.root = true;
+        let mut database_url = default_secret("${DB_HOST}");
+        database_url.set_value(Some("provider-ref-without-provider".to_string()));
+        config
+            .secrets
+            .insert("DATABASE_URL".to_string(), database_url);
+        config
+            .secrets
+            .insert("DB_HOST".to_string(), default_secret("${HOSTNAME}"));
+        config
+            .secrets
+            .insert("HOSTNAME".to_string(), default_secret("localhost"));
+
+        let secret_config = config.secrets.get("DATABASE_URL").unwrap();
+        let resolved = resolve_secret(&config, "default", "DATABASE_URL", secret_config)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, Some("localhost".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_secret_uses_interpolated_default_when_provider_missing_is_allowed() {
+        let mut config = Config::new();
+        config
+            .secrets
+            .insert("HOSTNAME".to_string(), default_secret("localhost"));
+
+        let mut database_url = default_secret("postgres://${HOSTNAME}/fnox");
+        database_url.set_provider(Some("missing-provider".to_string()));
+        database_url.set_value(Some("Database/url".to_string()));
+        database_url.if_missing = Some(IfMissing::Ignore);
+        config
+            .secrets
+            .insert("DATABASE_URL".to_string(), database_url);
+
+        let secret_config = config.secrets.get("DATABASE_URL").unwrap();
+        let resolved = resolve_secret(&config, "default", "DATABASE_URL", secret_config)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, Some("postgres://localhost/fnox".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_secret_interpolation_ignores_unrelated_invalid_default() {
+        let mut config = Config::new();
+        config.secrets.insert(
+            "DATABASE_URL".to_string(),
+            default_secret("postgres://${POSTGRES_USER}@localhost/fnox"),
+        );
+        config
+            .secrets
+            .insert("POSTGRES_USER".to_string(), default_secret("app"));
+        config.secrets.insert(
+            "UNRELATED".to_string(),
+            default_secret("${MISSING_UNRELATED}"),
+        );
+
+        let secret_config = config.secrets.get("DATABASE_URL").unwrap();
+        let resolved = resolve_secret(&config, "default", "DATABASE_URL", secret_config)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, Some("postgres://app@localhost/fnox".to_string()));
     }
 
     #[test]
