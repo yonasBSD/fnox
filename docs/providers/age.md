@@ -185,6 +185,21 @@ cat ~/.ssh/id_ed25519.pub
 cat ~/.ssh/id_rsa.pub
 ```
 
+## Plugin Support
+
+Age plugins extend age with hardware-backed and alternative keys. fnox supports any [age plugin](https://github.com/FiloSottile/awesome-age#plugins), for example [age-plugin-yubikey](https://github.com/str4d/age-plugin-yubikey) (YubiKey / PIV) or [age-plugin-se](https://github.com/remko/age-plugin-se) (Apple's Secure Enclave).
+
+A plugin recipient looks like a native age recipient but carries the plugin name
+in its prefix (`age1yubikey1...`, `age1tpm1...`, …):
+
+```toml
+[providers.age]
+type = "age"
+recipients = ["age1yubikey1qwla8v7cu3mx6mp79asgrh5ad2h52flwln7c66ydcyy50lg5uh0gxh4kmaz"]
+```
+
+Please refer to the respective plugin docs for detailed setup instructions.
+
 ## Team Workflow
 
 ### 1. Collect Public Keys
